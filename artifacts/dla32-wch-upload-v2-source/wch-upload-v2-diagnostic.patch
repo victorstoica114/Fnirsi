@@ -1,0 +1,31 @@
+--- a/src/hardware/fnirsi-dla32/transport-wch.h
++++ b/src/hardware/fnirsi-dla32/transport-wch.h
+@@ -165,9 +165,9 @@
+     ret = dla_wch_upload_set(wch, 0, phase);
+     if (ret != SR_OK)
+         return ret;
+-    ret = dla_wch_upload_clear(wch, phase);
+-    if (ret != SR_OK)
+-        return ret;
++    /* The observed kernel disables/cancels/retires the SDK queue here.
++     * Clear on a disabled queue is rejected with ERROR_NO_SYSTEM_RESOURCES;
++     * it is not an additional retirement requirement. */
+     wch->upload_dirty = FALSE;
+     return SR_OK;
+ }
+@@ -179,10 +179,11 @@
+     if (ret != SR_OK)
+         return ret;
+     wch->upload_dirty = TRUE;
+-    ret = dla_wch_upload_clear(wch, "before-arm");
+-    if (ret != SR_OK)
+-        return ret;
+-    return dla_wch_upload_set(wch, 1, "before-arm");
++    ret = dla_wch_upload_set(wch, 1, "before-arm");
++    if (ret != SR_OK)
++        return ret;
++    /* Required clear is performed only while the SDK upload path is enabled. */
++    return dla_wch_upload_clear(wch, "before-arm");
+ }
+ #endif
+ 

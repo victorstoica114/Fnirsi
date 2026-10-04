@@ -1,0 +1,18 @@
+# Python & Virtual environments
+.venv/
+__pycache__/
+*.py[cod]
+
+# Local test & dump artifacts
+*.bin
+*.pcapng
+*.pcap
+*.log
+zadig*
+
+# Generated helper output
+analysis_out.txt
+
+# Large raw packet dumps & analysis data
+/DLNA32/*
+!/DLNA32/PROTOCOL.md

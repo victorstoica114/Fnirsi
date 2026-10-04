@@ -1,0 +1,23 @@
+{
+  "variant": "wch-timeout",
+  "source_directory": "D:\\Documente\\analizor logic\\artifacts\\dla32-wch-timeout-source\\libsigrok",
+  "changed_files": [
+    "src/hardware/fnirsi-dla32/transport-wch.h"
+  ],
+  "source_patch_sha256": "d5a7ea293732bce50ec8e139d9788802dfcb12c4668496485323524a005e742c",
+  "prearm_empty_reads": 1,
+  "upload_diagnostic_enabled": false,
+  "read_size_bytes": 1048576,
+  "sample_read_timeout_ms": 1000,
+  "drain_read_timeout_ms": 20,
+  "command_write_timeout_ms": 1000,
+  "operation_timeout_policy": "before every ReadEndP: Ex(t,t,t,t) or legacy(t,t); before every WriteData: Ex(1000,1000,1000,1000) or legacy(1000,1000)",
+  "timeout_policy_unchanged": false,
+  "api_unchanged_vs_baseline": true,
+  "decoder_or_lane_correction": false,
+  "trigger_or_readsize_or_queue_changes": false,
+  "protocol_sha256": "8d09566555230a0d66ced4abb2d5d9230dae93c66f953ed0acc2e1fc81bc4cd3",
+  "primary_timeout_evidence_sha256": "9d6853dd0f57a7181b5bf654c834766c76055a5bc4cfa20c2e5e7411c4da9b7f",
+  "direct_timeout_probe_sha256": "c13ada54f1d727806f0752858926069256707070535a3f492b5aa81de470124a",
+  "hardware_accessed": false
+}

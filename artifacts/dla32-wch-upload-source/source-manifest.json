@@ -1,0 +1,34 @@
+{
+  "purpose": "one diagnostic variable: capture-scoped WCH SDK upload queue lifecycle",
+  "source_directory": "D:\\Documente\\analizor logic\\artifacts\\dla32-wch-upload-source\\libsigrok",
+  "changed_files": [
+    "src/hardware/fnirsi-dla32/api.c",
+    "src/hardware/fnirsi-dla32/transport-wch.h"
+  ],
+  "source_sha256": {
+    "src/hardware/fnirsi-dla32/api.c": "55524facd2b286669b1cb5fd74e29d11c0f38c8c02e52021c1a373dc6bd40a59",
+    "src/hardware/fnirsi-dla32/transport-wch.h": "e82007de5aae61a6a04702c197f4e3bb7cd1a4183500824b701088c6623add7c"
+  },
+  "patch_sha256": "48a9a8e3b9dc2cb8eeff06ef83dca1247905b88371a5af4a381b3b2a49441ab9",
+  "source_sha256_map_sha256": "49b3b506a8d0cb896f96ad355f8fa21dc29a19fd517e8635f2517d4e43743acf",
+  "prearm_empty_reads": 1,
+  "read_size_bytes": 1048576,
+  "sample_read_timeout_ms": 1000,
+  "drain_read_timeout_ms": 20,
+  "upload_length_bytes": 1048576,
+  "upload_pipe": 1,
+  "upload_clear_erased_byte_count": null,
+  "upload_length_is_known_total_queue_capacity": false,
+  "decoder_changed": false,
+  "frame_or_channel_correction": false,
+  "hardware_accessed": false,
+  "abi_note_sha256": "72e88625ce586f53e03570814222f70ab4f0d215e3ba8235d19e27d26ae16420",
+  "abi_machine_record_sha256": "36b18b7156de7e4f600c16b7d225f963a384eec7f0d68057b97b0391b5f98d5e",
+  "protected_dll_sha256": {
+    "artifacts/pulseview-dla32-reliability/libsigrok-4.dll": "76bfe1e98b37a5af01dcd39f453125978a5bfa86d622d49b5098ba4b226b7049",
+    "artifacts/pulseview-la1010-reference/libsigrok-4.dll": "90e3efc04c2f799a30ec45258954fb3f62e1fcbc79bcbedc36d2e61c9364bdd7",
+    "artifacts/pulseview-dla32-wiretrace/libsigrok-4.dll": "d299cc594f24f9e737db21b95f70f78791fe5ecf6bd81af724ab48854089d869",
+    "artifacts/dla32-drain-ab-baseline/libsigrok-4.dll": "b3d3b7082367db88ada7a1d285accf2877ffc2b9f6f17fd664222106f27c1662",
+    "artifacts/dla32-drain-ab-two-empty/libsigrok-4.dll": "67e5a15825fb3aae5ad310f3c482b29899bcaf3db423ef202adb9188835d8b88"
+  }
+}

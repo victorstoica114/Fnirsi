@@ -1,0 +1,52 @@
+diff --git a/build_linux.sh b/build_linux.sh
+old mode 100644
+new mode 100755
+index f1d3cf9..8b26515
+--- a/build_linux.sh
++++ b/build_linux.sh
+@@ -70,8 +70,8 @@ if [ "$INSTALL_DEPS" = true ]; then
+     sudo apt-get install -y \
+         git gcc g++ make cmake ninja-build pkg-config \
+         libglib2.0-dev zlib1g-dev libusb-1.0-0-dev libudev-dev \
+-        libboost-dev libfftw3-dev libssl-dev \
+-        python3-dev python3-pip \
++        libboost-dev libfftw3-dev libssl-dev libpulse-dev \
++        python3-dev python3-pip python3-venv \
+         libgl1-mesa-dev libxkbcommon-dev libxkbcommon-x11-0 libvulkan-dev \
+         libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+         libxcb-render0 libxcb-render-util0 libxcb-randr0 libxcb-shape0 \
+@@ -79,7 +79,7 @@ if [ "$INSTALL_DEPS" = true ]; then
+         libxcb-xinput0 libxcb-xkb1 libxcb-util1 \
+         libwayland-dev libwayland-egl1 libwayland-client0 libwayland-cursor0 \
+         libzip-dev nettle-dev libftdi1-dev \
+-        sdcc wget zip
++        sdcc wget zip makeself
+     echo "   [OK] 依赖安装完成"
+ else
+     echo " [1/7] 跳过依赖安装 (--no-deps)"
+@@ -94,9 +94,13 @@ if [ "$USE_SYSTEM_QT" = true ]; then
+ else
+     if [ ! -d "$QT_PREFIX/$QT_VERSION/gcc_64" ]; then
+         echo "   通过 aqtinstall 安装 Qt $QT_VERSION..."
+-        pip3 install aqtinstall
+-        aqt install-qt linux desktop "$QT_VERSION" linux_gcc_64 \
+-            -m qtwebsockets --outputdir "$QT_PREFIX"
++        AQT_VENV="$SCRIPT_DIR/.venv-aqtinstall"
++        if [ ! -x "$AQT_VENV/bin/aqt" ]; then
++            python3 -m venv "$AQT_VENV"
++            "$AQT_VENV/bin/python" -m pip install aqtinstall
++        fi
++        "$AQT_VENV/bin/aqt" install-qt linux desktop "$QT_VERSION" linux_gcc_64 \
++            -m qtwebsockets qtmultimedia --outputdir "$QT_PREFIX"
+         echo "   [OK] Qt 安装到 $QT_PREFIX"
+     else
+         echo "   [OK] Qt 已存在于 $QT_PREFIX, 跳过安装"
+@@ -109,7 +113,7 @@ echo ""
+ if [ "$USE_SYSTEM_QT" = false ]; then
+     echo " [3/7] 检查 qtwayland 平台插件..."
+     QT_PLUGINS_DIR="$QT_PREFIX/$QT_VERSION/gcc_64/plugins/platforms"
+-    if [ -f "$QT_PLUGINS_DIR/libqwayland-qt.so" ] || [ -f "$QT_PLUGINS_DIR/libqwayland-generic.so" ]; then
++    if [ -f "$QT_PLUGINS_DIR/libqwayland.so" ] || [ -f "$QT_PLUGINS_DIR/libqwayland-qt.so" ] || [ -f "$QT_PLUGINS_DIR/libqwayland-generic.so" ]; then
+         echo "   [OK] qtwayland 插件已存在,跳过编译"
+     else
+         echo "   构建 qtwayland (让安装包在 xcb 和 wayland 会话下都能启动)..."

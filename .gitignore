@@ -1,0 +1,47 @@
+# Local measurements and evidence are intentionally outside this repository.
+/captures/
+/logs/
+/downloads/
+/references/
+/backups/
+/.playwright-mcp/
+/artifacts/report/
+/artifacts/pulseview-dla32*/
+/artifacts/pulseview-la1010-reference/
+/tools/esp32-build-python/
+/tools/plot-python-libs/
+/tools/toolchain-path.txt
+/tools/prepare_fnirsi_email.py
+/tools/package_buffer_evidence.py
+/tools/package_fnirsi_stream_evidence.py
+/tools/replay_fnirsi_stream_evidence.py
+
+# Private notes belong only in the encrypted archive.
+/PROIECT_DLA32_PULSEVIEW.md
+/AUDIT_DRIVER_DLA32.md
+/CUM_FOLOSIM_PULSEVIEW_DLA32.md
+/INVESTIGATIE_*.md
+/EVALUARE_PWM_ESP32_REGISTRE.md
+/TESTE_ESP32_DLA32.md
+/ACTUALIZARE_FIRMWARE_DLA32.md
+/RAPORT_BUFFER_COMPARATIV_DLA32.md
+/DRAFT_EMAIL_FNIRSI.md
+/TRIMITERE_FNIRSI.md
+*DECRYPTION_KEY*
+*.key
+.env
+.env.*
+
+# Build outputs and caches.
+**/.pio/
+**/__pycache__/
+**/.pytest_cache/
+**/.deps/
+**/.libs/
+*.pyc
+*.exe
+*.dll
+*.o
+*.obj
+*.a
+*.so

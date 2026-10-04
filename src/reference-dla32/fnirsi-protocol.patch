@@ -1,0 +1,897 @@
+diff --git a/src/hardware/fnirsi-dla32/api.c b/src/hardware/fnirsi-dla32/api.c
+new file mode 100644
+index 00000000..167d07b1
+--- /dev/null
++++ b/src/hardware/fnirsi-dla32/api.c
+@@ -0,0 +1,844 @@
++#include <config.h>
++#include <glib.h>
++#include <string.h>
++#include "protocol.h"
++
++/*
++ * AI-generated with assistance from GitHub Copilot.
++ * Model: GitHub Copilot; the underlying model identifier was not exposed.
++ * Human review and hardware validation were performed for this integration.
++ */
++
++#ifdef _WIN32
++#include <windows.h>
++
++typedef HANDLE (WINAPI *pfn_CH375OpenDevice)(ULONG iIndex);
++typedef VOID (WINAPI *pfn_CH375CloseDevice)(ULONG iIndex);
++typedef BOOL (WINAPI *pfn_CH375WriteData)(ULONG iIndex, PVOID oBuffer, PULONG ioLength);
++typedef BOOL (WINAPI *pfn_CH375ReadData)(ULONG iIndex, PVOID oBuffer, PULONG ioLength);
++typedef BOOL (WINAPI *pfn_CH375ReadEndP)(ULONG iIndex, ULONG iPipeNum, PVOID oBuffer, PULONG ioLength);
++typedef BOOL (WINAPI *pfn_CH375SetTimeout)(ULONG iIndex, ULONG iWriteTimeout, ULONG iReadTimeout);
++typedef BOOL (WINAPI *pfn_CH375SetBufUpload)(ULONG iIndex, ULONG iEnableOrClear);
++typedef ULONG (WINAPI *pfn_CH375QueryBufUpload)(ULONG iIndex);
++typedef ULONG (WINAPI *pfn_CH375GetDrvVersion)(VOID);
++
++static HMODULE h_ch375_dll = NULL;
++static pfn_CH375OpenDevice fn_CH375OpenDevice = NULL;
++static pfn_CH375CloseDevice fn_CH375CloseDevice = NULL;
++static pfn_CH375WriteData fn_CH375WriteData = NULL;
++static pfn_CH375ReadData fn_CH375ReadData = NULL;
++static pfn_CH375ReadEndP fn_CH375ReadEndP = NULL;
++static pfn_CH375SetTimeout fn_CH375SetTimeout = NULL;
++static pfn_CH375SetBufUpload fn_CH375SetBufUpload = NULL;
++static pfn_CH375QueryBufUpload fn_CH375QueryBufUpload = NULL;
++static pfn_CH375GetDrvVersion fn_CH375GetDrvVersion = NULL;
++
++static void load_ch375_dll(void)
++{
++    if (h_ch375_dll)
++        return;
++    h_ch375_dll = LoadLibraryA("CH375DLL64.dll");
++    if (!h_ch375_dll)
++        h_ch375_dll = LoadLibraryA("C:\\Program Files\\DLA_Logic\\CH375DLL64.dll");
++    if (h_ch375_dll) {
++        fn_CH375OpenDevice = (pfn_CH375OpenDevice)GetProcAddress(h_ch375_dll, "CH375OpenDevice");
++        fn_CH375CloseDevice = (pfn_CH375CloseDevice)GetProcAddress(h_ch375_dll, "CH375CloseDevice");
++        fn_CH375WriteData = (pfn_CH375WriteData)GetProcAddress(h_ch375_dll, "CH375WriteData");
++        fn_CH375ReadData = (pfn_CH375ReadData)GetProcAddress(h_ch375_dll, "CH375ReadData");
++        fn_CH375ReadEndP = (pfn_CH375ReadEndP)GetProcAddress(h_ch375_dll, "CH375ReadEndP");
++        fn_CH375SetTimeout = (pfn_CH375SetTimeout)GetProcAddress(h_ch375_dll, "CH375SetTimeout");
++        fn_CH375SetBufUpload = (pfn_CH375SetBufUpload)GetProcAddress(h_ch375_dll, "CH375SetBufUpload");
++        fn_CH375QueryBufUpload = (pfn_CH375QueryBufUpload)GetProcAddress(h_ch375_dll, "CH375QueryBufUpload");
++        fn_CH375GetDrvVersion = (pfn_CH375GetDrvVersion)GetProcAddress(h_ch375_dll, "CH375GetDrvVersion");
++    }
++}
++#endif
++
++static const uint32_t scanopts[] = {
++    SR_CONF_CONN,
++};
++
++static const uint32_t drvopts[] = {
++    SR_CONF_LOGIC_ANALYZER,
++};
++
++static const uint32_t devopts[] = {
++    SR_CONF_LIMIT_SAMPLES | SR_CONF_GET | SR_CONF_SET,
++    SR_CONF_SAMPLERATE | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
++    SR_CONF_THRESHOLD | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
++    SR_CONF_VTH | SR_CONF_GET | SR_CONF_SET,
++    SR_CONF_OPERATION_MODE | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
++    SR_CONF_VOLTAGE_THRESHOLD | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
++    SR_CONF_CONN | SR_CONF_GET,
++};
++
++static const char *threshold_strs[] = {
++    "1.2V", "1.8V", "2.5V", "3.3V", "5.0V",
++};
++
++static const double threshold_volts[] = {
++    0.6, 0.9, 1.25, 1.6, 2.5,
++};
++
++static const char *op_mode_strs[] = {
++    "Buffer Mode", "Stream Mode",
++};
++
++static const double threshold_ranges[][2] = {
++    { 0.6, 0.6 },   /* 1.2V logic */
++    { 0.9, 0.9 },   /* 1.8V logic */
++    { 1.25, 1.25 }, /* 2.5V logic */
++    { 1.6, 1.6 },   /* 3.3V logic (default) */
++    { 2.5, 2.5 },   /* 5.0V logic */
++};
++
++static const uint64_t samplerates[] = {
++    SR_MHZ(50),
++    SR_MHZ(200),
++    SR_MHZ(1000),
++};
++
++static const char *channel_names[] = {
++    "D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7",
++    "D8", "D9", "D10", "D11", "D12", "D13", "D14", "D15",
++    "D16", "D17", "D18", "D19", "D20", "D21", "D22", "D23",
++    "D24", "D25", "D26", "D27", "D28", "D29", "D30", "D31",
++};
++
++static gboolean is_dla32(const struct libusb_device_descriptor *des)
++{
++    return (des->idVendor == FNIRSI_DLA32_VID || des->idVendor == FNIRSI_DLA32_VID2) &&
++        des->idProduct == FNIRSI_DLA32_PID;
++}
++
++static int send_command(struct sr_dev_inst *sdi, const uint8_t *command)
++{
++    struct dev_context *devc = sdi ? sdi->priv : NULL;
++    struct sr_usb_dev_inst *usb = sdi ? sdi->conn : NULL;
++    int transferred = 0;
++    int ret;
++
++#ifdef _WIN32
++    if (devc && devc->use_ch375 && fn_CH375WriteData) {
++        ULONG len = FNIRSI_DLA32_COMMAND_SIZE;
++        if (fn_CH375WriteData(devc->ch375_index, (PVOID)command, &len))
++            return SR_OK;
++        sr_err("DLA32 CH375WriteData failed.");
++        return SR_ERR;
++    }
++#endif
++
++    if (!usb || !usb->devhdl)
++        return SR_ERR;
++
++    ret = libusb_bulk_transfer(usb->devhdl, FNIRSI_DLA32_EP_OUT,
++        (unsigned char *)command, FNIRSI_DLA32_COMMAND_SIZE,
++        &transferred, 2000);
++    if (ret != 0 || transferred != FNIRSI_DLA32_COMMAND_SIZE) {
++        sr_err("DLA32 command transfer failed: %s (%d/%d).",
++            libusb_error_name(ret), transferred, FNIRSI_DLA32_COMMAND_SIZE);
++        return SR_ERR;
++    }
++
++    return SR_OK;
++}
++
++struct setup_profile {
++    uint64_t samplerate;
++    uint64_t limit_samples;
++    int threshold_sel;
++    int op_mode;
++    uint8_t payload[37];
++};
++
++static const struct setup_profile verified_profiles[] = {
++    { SR_MHZ(50), 50000, 0, 0, {
++        0x0a, 0x11, 0x1e, 0x00, 0x00, 0x01, 0x00, 0x03,
++        0x00, 0x80, 0xf0, 0xfa, 0x02, 0x08, 0x3c, 0x00,
++        0x07, 0x01, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00,
++        0x50, 0xc3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
++        0x0b, 0x9f, 0x73, 0x5d, 0x5b } },
++    { SR_MHZ(50), 50000, 3, 0, {
++        0x0a, 0x11, 0x1e, 0x00, 0x00, 0x01, 0x00, 0x03,
++        0x00, 0x80, 0xf0, 0xfa, 0x02, 0x08, 0xa0, 0x00,
++        0x02, 0x01, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00,
++        0x50, 0xc3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
++        0x0b, 0x1a, 0x6d, 0x35, 0xbd } },
++    { SR_MHZ(50), 50000, 4, 0, {
++        0x0a, 0x11, 0x1e, 0x00, 0x00, 0x01, 0x00, 0x03,
++        0x00, 0x80, 0xf0, 0xfa, 0x02, 0x08, 0xfa, 0x00,
++        0x01, 0x01, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00,
++        0x50, 0xc3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
++        0x0b, 0x1f, 0x30, 0x56, 0x12 } },
++    { SR_MHZ(50), 100000, 3, 0, {
++        0x0a, 0x11, 0x1e, 0x00, 0x00, 0x01, 0x00, 0x03,
++        0x00, 0x80, 0xf0, 0xfa, 0x02, 0x08, 0xa0, 0x00,
++        0x02, 0x02, 0x00, 0x01, 0x0a, 0x00, 0x00, 0x00,
++        0xa0, 0x86, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
++        0x0b, 0xd7, 0x43, 0xda, 0x53 } },
++    { SR_MHZ(50), 250000, 3, 0, {
++        0x0a, 0x11, 0x1e, 0x00, 0x00, 0x01, 0x00, 0x03,
++        0x00, 0x80, 0xf0, 0xfa, 0x02, 0x08, 0xa0, 0x00,
++        0x02, 0x05, 0x00, 0x02, 0x0a, 0x00, 0x00, 0x00,
++        0x90, 0xd0, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00,
++        0x0b, 0xf8, 0x0e, 0x11, 0xfd } },
++    { SR_MHZ(50), 500000, 3, 0, {
++        0x0a, 0x11, 0x1e, 0x00, 0x00, 0x01, 0x00, 0x03,
++        0x00, 0x80, 0xf0, 0xfa, 0x02, 0x08, 0xa0, 0x00,
++        0x02, 0x0a, 0x00, 0x03, 0x0a, 0x00, 0x00, 0x00,
++        0x20, 0xa1, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00,
++        0x0b, 0xce, 0x5b, 0x77, 0x73 } },
++    { SR_MHZ(200), 200000, 3, 0, {
++        0x0a, 0x11, 0x1e, 0x00, 0x00, 0x01, 0x00, 0x03,
++        0x00, 0x00, 0xc2, 0xeb, 0x0b, 0x0b, 0xa0, 0x00,
++        0x02, 0x01, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00,
++        0x40, 0x0d, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00,
++        0x0b, 0x04, 0x13, 0x40, 0x50 } },
++    { SR_MHZ(1000), 1000000, 3, 0, {
++        0x0a, 0x11, 0x1e, 0x00, 0x00, 0x01, 0x00, 0x03,
++        0x00, 0x00, 0xca, 0x9a, 0x3b, 0x0e, 0xa0, 0x00,
++        0x02, 0x01, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00,
++        0x40, 0x42, 0x0f, 0x00, 0x00, 0x00, 0x00, 0x00,
++        0x0b, 0x20, 0x7f, 0x25, 0x5f } },
++};
++
++static gboolean copy_verified_profile(uint8_t *command, const struct dev_context *devc)
++{
++    size_t i;
++
++    for (i = 0; i < ARRAY_SIZE(verified_profiles); i++) {
++        const struct setup_profile *profile = &verified_profiles[i];
++        if (profile->samplerate == devc->samplerate &&
++            profile->limit_samples == devc->limit_samples &&
++            profile->threshold_sel == devc->threshold_sel &&
++            profile->op_mode == devc->op_mode) {
++            memset(command, 0, FNIRSI_DLA32_COMMAND_SIZE);
++            memcpy(&command[8], profile->payload, sizeof(profile->payload));
++            return TRUE;
++        }
++    }
++
++    return FALSE;
++}
++
++static gboolean make_setup_command(uint8_t *command, struct dev_context *devc)
++{
++    static const uint8_t setup_1v2[] = {
++        0x0a, 0x11, 0x1e, 0x00, 0x00, 0x01, 0x00, 0x03,
++        0x00, 0x80, 0xf0, 0xfa, 0x02, 0x08, 0x3c, 0x00,
++        0x07, 0xf4, 0x01, 0x08, 0x0a, 0x00, 0x00, 0x00,
++        0x40, 0x78, 0x7d, 0x01, 0x00, 0x00, 0x00, 0x00,
++        0x0b, 0xc6, 0xc8, 0x18, 0x33,
++    };
++    static const uint8_t setup_3v3[] = {
++        0x0a, 0x11, 0x1e, 0x00, 0x00, 0x01, 0x00, 0x03,
++        0x00, 0x80, 0xf0, 0xfa, 0x02, 0x08, 0xa0, 0x00,
++        0x02, 0xf4, 0x01, 0x08, 0x0a, 0x00, 0x00, 0x00,
++        0x40, 0x78, 0x7d, 0x01, 0x00, 0x00, 0x00, 0x00,
++        0x0b, 0x43, 0xd6, 0x70, 0xd5,
++    };
++    static const uint8_t setup_5v0[] = {
++        0x0a, 0x11, 0x1e, 0x00, 0x00, 0x01, 0x00, 0x03,
++        0x00, 0x80, 0xf0, 0xfa, 0x02, 0x08, 0xfa, 0x00,
++        0x01, 0xf4, 0x01, 0x08, 0x0a, 0x00, 0x00, 0x00,
++        0x40, 0x78, 0x7d, 0x01, 0x00, 0x00, 0x00, 0x00,
++        0x0b, 0x46, 0x8b, 0x13, 0x7a,
++    };
++
++    if (!devc || devc->op_mode != 0 || devc->threshold_sel == 1 || devc->threshold_sel == 2) {
++        sr_err("DLA32 setup combination is not verified.");
++        return FALSE;
++    }
++    if (devc->threshold_sel < 0 || devc->threshold_sel >= (int)ARRAY_SIZE(threshold_volts) ||
++        devc->threshold_voltage < threshold_volts[devc->threshold_sel] - 0.0001 ||
++        devc->threshold_voltage > threshold_volts[devc->threshold_sel] + 0.0001) {
++        sr_err("DLA32 continuous VTH value has no verified setup profile.");
++        return FALSE;
++    }
++
++    if (devc->limit_samples && copy_verified_profile(command, devc))
++        return TRUE;
++
++    if (devc->samplerate != SR_MHZ(50)) {
++        sr_err("DLA32 setup profile is unavailable for this samplerate or sample limit.");
++        return FALSE;
++    }
++
++    const uint8_t *tmpl = setup_3v3;
++    if (devc) {
++        if (devc->threshold_sel == 0 || (devc->threshold_voltage > 0 && devc->threshold_voltage <= 1.5))
++            tmpl = setup_1v2;
++        else if (devc->threshold_sel == 4 || devc->threshold_voltage > 4.0)
++            tmpl = setup_5v0;
++    }
++
++    memset(command, 0, FNIRSI_DLA32_COMMAND_SIZE);
++    memcpy(&command[8], tmpl, 37);
++    return TRUE;
++}
++
++static void make_channel_command(uint8_t *command, uint32_t channel_mask)
++{
++    static const uint8_t channels_prefix[] = {
++        0x0a, 0x12, 0x27, 0x00, 0x00
++    };
++    static const uint8_t channels_suffix[] = {
++        0x0b, 0x69, 0x60, 0x33, 0x4e,
++    };
++
++    memset(command, 0, FNIRSI_DLA32_COMMAND_SIZE);
++    memcpy(&command[8], channels_prefix, sizeof(channels_prefix));
++    command[13] = (uint8_t)(channel_mask & 0xff);
++    command[14] = (uint8_t)((channel_mask >> 8) & 0xff);
++    command[15] = (uint8_t)((channel_mask >> 16) & 0xff);
++    command[16] = (uint8_t)((channel_mask >> 24) & 0xff);
++    memcpy(&command[8 + 41], channels_suffix, sizeof(channels_suffix));
++}
++
++static void make_stop_command(uint8_t *command)
++{
++    static const uint8_t stop[] = {
++        0x0a, 0x15, 0x02, 0x00, 0x0b, 0xe6, 0xfc, 0x24,
++        0xd7,
++    };
++
++    memset(command, 0, FNIRSI_DLA32_COMMAND_SIZE);
++    memcpy(&command[8], stop, sizeof(stop));
++}
++
++static GSList *scan(struct sr_dev_driver *di, GSList *options)
++{
++    struct drv_context *drvc = di->context;
++    struct sr_dev_inst *sdi;
++    struct sr_usb_dev_inst *usb;
++    struct sr_channel_group *cg;
++    struct sr_channel *ch;
++    struct sr_config *src;
++    GSList *devices = NULL;
++    GSList *l;
++    const char *conn = NULL;
++    libusb_device **devlist;
++    struct libusb_device_descriptor des;
++    char connection_id[64];
++    int count;
++    int i;
++    int j;
++    int num_usb3 = 0;
++
++    for (l = options; l; l = l->next) {
++        src = l->data;
++        if (src->key == SR_CONF_CONN)
++            conn = g_variant_get_string(src->data, NULL);
++    }
++
++#ifdef _WIN32
++    load_ch375_dll();
++    if (fn_CH375OpenDevice) {
++        for (uint32_t dev_idx = 0; dev_idx < 4; dev_idx++) {
++            HANDLE h = fn_CH375OpenDevice(dev_idx);
++            if (h && h != INVALID_HANDLE_VALUE && h != (HANDLE)(LONG_PTR)-1) {
++                fn_CH375CloseDevice(dev_idx);
++                sdi = g_malloc0(sizeof(*sdi));
++                sdi->status = SR_ST_INACTIVE;
++                sdi->inst_type = SR_INST_USB;
++                sdi->vendor = g_strdup("FNIRSI");
++                sdi->model = g_strdup("DLA-32");
++                sdi->connection_id = g_strdup_printf("WCH-CH375/%u", dev_idx);
++                sdi->priv = g_malloc0(sizeof(struct dev_context));
++                ((struct dev_context *)sdi->priv)->samplerate = FNIRSI_DLA32_SAMPLERATE;
++                ((struct dev_context *)sdi->priv)->limit_samples = 0;
++                ((struct dev_context *)sdi->priv)->use_ch375 = TRUE;
++                ((struct dev_context *)sdi->priv)->ch375_index = dev_idx;
++                ((struct dev_context *)sdi->priv)->threshold_voltage = 1.6;
++                ((struct dev_context *)sdi->priv)->threshold_sel = 3;
++                ((struct dev_context *)sdi->priv)->op_mode = 0;
++
++                cg = sr_channel_group_new(sdi, "Logic", NULL);
++                for (j = 0; j < 32; j++) {
++                    ch = sr_channel_new(sdi, j, SR_CHANNEL_LOGIC, TRUE,
++                        channel_names[j]);
++                    cg->channels = g_slist_append(cg->channels, ch);
++                }
++                devices = g_slist_append(devices, sdi);
++            }
++        }
++        if (devices)
++            return std_scan_complete(di, devices);
++    }
++#endif
++
++    count = libusb_get_device_list(drvc->sr_ctx->libusb_ctx, &devlist);
++    if (count > 0) {
++        /* Check if USB 3.0 node (bcdUSB >= 0x0300) is present */
++        for (i = 0; i < count; i++) {
++            if (libusb_get_device_descriptor(devlist[i], &des) == 0 &&
++                is_dla32(&des) &&
++                des.bcdUSB >= 0x0300) {
++                num_usb3++;
++            }
++        }
++
++        for (i = 0; i < count; i++) {
++            if (libusb_get_device_descriptor(devlist[i], &des) != 0 ||
++                !is_dla32(&des))
++                continue;
++
++            /* Prefer USB 3.0 node (bcdUSB >= 0x0300) over USB 2.0 fallback (bcdUSB == 0x0200) */
++            if (num_usb3 > 0 && des.bcdUSB < 0x0300)
++                continue;
++
++            if (usb_get_port_path(devlist[i], connection_id,
++                sizeof(connection_id)) < 0)
++                continue;
++            if (conn && strcmp(conn, connection_id) != 0)
++                continue;
++
++            sdi = g_malloc0(sizeof(*sdi));
++            sdi->status = SR_ST_INACTIVE;
++            sdi->inst_type = SR_INST_USB;
++            sdi->vendor = g_strdup("FNIRSI");
++            sdi->model = g_strdup("DLA-32");
++            sdi->connection_id = g_strdup(connection_id);
++            usb = sr_usb_dev_inst_new(libusb_get_bus_number(devlist[i]),
++                libusb_get_device_address(devlist[i]), NULL);
++            sdi->conn = usb;
++            sdi->priv = g_malloc0(sizeof(struct dev_context));
++            ((struct dev_context *)sdi->priv)->samplerate = FNIRSI_DLA32_SAMPLERATE;
++            ((struct dev_context *)sdi->priv)->limit_samples = 0;
++            ((struct dev_context *)sdi->priv)->threshold_voltage = 1.6;
++            ((struct dev_context *)sdi->priv)->threshold_sel = 3;
++            ((struct dev_context *)sdi->priv)->op_mode = 0;
++
++            cg = sr_channel_group_new(sdi, "Logic", NULL);
++            for (j = 0; j < 32; j++) {
++                ch = sr_channel_new(sdi, j, SR_CHANNEL_LOGIC, TRUE,
++                    channel_names[j]);
++                cg->channels = g_slist_append(cg->channels, ch);
++            }
++            devices = g_slist_append(devices, sdi);
++        }
++
++        libusb_free_device_list(devlist, 1);
++    }
++
++    return std_scan_complete(di, devices);
++}
++
++static int dev_clear(const struct sr_dev_driver *di)
++{
++    return std_dev_clear(di);
++}
++
++static int dev_open(struct sr_dev_inst *sdi)
++{
++    struct dev_context *devc = sdi ? sdi->priv : NULL;
++    struct drv_context *drvc = sdi->driver->context;
++    struct sr_usb_dev_inst *usb = sdi->conn;
++    libusb_device **devlist;
++    struct libusb_device_descriptor des;
++    int count;
++    int i;
++    int ret = SR_ERR;
++
++#ifdef _WIN32
++    if (devc && devc->use_ch375 && fn_CH375OpenDevice) {
++        HANDLE h = fn_CH375OpenDevice(devc->ch375_index);
++        if (h && h != INVALID_HANDLE_VALUE) {
++            if (fn_CH375SetTimeout)
++                fn_CH375SetTimeout(devc->ch375_index, 1000, 1000);
++            return SR_OK;
++        }
++        return SR_ERR;
++    }
++#endif
++
++    count = libusb_get_device_list(drvc->sr_ctx->libusb_ctx, &devlist);
++    if (count < 0)
++        return SR_ERR;
++    for (i = 0; i < count; i++) {
++        if (libusb_get_device_descriptor(devlist[i], &des) != 0 ||
++            !is_dla32(&des))
++            continue;
++        if (des.bcdUSB < 0x0300)
++            continue;
++        ret = libusb_open(devlist[i], &usb->devhdl);
++        if (ret == 0) {
++            usb->bus = libusb_get_bus_number(devlist[i]);
++            usb->address = libusb_get_device_address(devlist[i]);
++            break;
++        }
++    }
++    libusb_free_device_list(devlist, 1);
++    if (ret != 0) {
++        sr_err("Unable to open FNIRSI DLA-32: %s.", libusb_error_name(ret));
++        return SR_ERR;
++    }
++    if (libusb_claim_interface(usb->devhdl, FNIRSI_DLA32_INTERFACE) != 0) {
++        libusb_close(usb->devhdl);
++        usb->devhdl = NULL;
++        return SR_ERR;
++    }
++    return SR_OK;
++}
++
++static int dev_close(struct sr_dev_inst *sdi)
++{
++    struct dev_context *devc = sdi ? sdi->priv : NULL;
++    struct sr_usb_dev_inst *usb = sdi->conn;
++
++#ifdef _WIN32
++    if (devc && devc->use_ch375 && fn_CH375CloseDevice) {
++        fn_CH375CloseDevice(devc->ch375_index);
++        return SR_OK;
++    }
++#endif
++
++    if (!usb || !usb->devhdl)
++        return SR_ERR;
++    libusb_release_interface(usb->devhdl, FNIRSI_DLA32_INTERFACE);
++    libusb_close(usb->devhdl);
++    usb->devhdl = NULL;
++    return SR_OK;
++}
++
++static int config_get(uint32_t key, GVariant **data,
++    const struct sr_dev_inst *sdi, const struct sr_channel_group *cg)
++{
++    struct dev_context *devc = sdi ? sdi->priv : NULL;
++    struct sr_usb_dev_inst *usb = sdi ? sdi->conn : NULL;
++
++    (void)cg;
++    if (!devc)
++        return SR_ERR_ARG;
++    switch (key) {
++    case SR_CONF_CONN:
++        if (usb)
++            *data = g_variant_new_printf("%d.%d", usb->bus, usb->address);
++        else
++            *data = g_variant_new_string(sdi->connection_id ? sdi->connection_id : "WCH");
++        return SR_OK;
++    case SR_CONF_SAMPLERATE:
++        *data = g_variant_new_uint64(devc->samplerate);
++        return SR_OK;
++    case SR_CONF_LIMIT_SAMPLES:
++        *data = g_variant_new_uint64(devc->limit_samples);
++        return SR_OK;
++    case SR_CONF_THRESHOLD:
++        if (devc->threshold_sel >= 0 && devc->threshold_sel < (int)ARRAY_SIZE(threshold_strs))
++            *data = g_variant_new_string(threshold_strs[devc->threshold_sel]);
++        else
++            *data = g_variant_new_string(threshold_strs[3]);
++        return SR_OK;
++    case SR_CONF_VTH:
++        *data = g_variant_new_double(devc->threshold_voltage);
++        return SR_OK;
++    case SR_CONF_OPERATION_MODE:
++        if (devc->op_mode >= 0 && devc->op_mode < (int)ARRAY_SIZE(op_mode_strs))
++            *data = g_variant_new_string(op_mode_strs[devc->op_mode]);
++        else
++            *data = g_variant_new_string(op_mode_strs[0]);
++        return SR_OK;
++    case SR_CONF_VOLTAGE_THRESHOLD:
++        *data = std_gvar_tuple_double(devc->threshold_voltage, devc->threshold_voltage);
++        return SR_OK;
++    default:
++        return SR_ERR_NA;
++    }
++}
++
++static int config_set(uint32_t key, GVariant *data,
++    const struct sr_dev_inst *sdi, const struct sr_channel_group *cg)
++{
++    struct dev_context *devc = sdi ? sdi->priv : NULL;
++    uint64_t value;
++    int idx;
++
++    (void)cg;
++    if (!devc)
++        return SR_ERR_ARG;
++    switch (key) {
++    case SR_CONF_SAMPLERATE:
++        value = g_variant_get_uint64(data);
++        if (value != SR_MHZ(50) && value != SR_MHZ(200) && value != SR_MHZ(1000))
++            return SR_ERR_ARG;
++        devc->samplerate = value;
++        return SR_OK;
++    case SR_CONF_LIMIT_SAMPLES:
++        value = g_variant_get_uint64(data);
++        devc->limit_samples = value;
++        return SR_OK;
++    case SR_CONF_THRESHOLD:
++        idx = std_str_idx(data, ARRAY_AND_SIZE(threshold_strs));
++        if (idx < 0)
++            return SR_ERR_ARG;
++        devc->threshold_sel = idx;
++        devc->threshold_voltage = threshold_volts[idx];
++        return SR_OK;
++    case SR_CONF_VTH:
++        devc->threshold_voltage = g_variant_get_double(data);
++        return SR_OK;
++    case SR_CONF_OPERATION_MODE:
++        idx = std_str_idx(data, ARRAY_AND_SIZE(op_mode_strs));
++        if (idx < 0)
++            return SR_ERR_ARG;
++        devc->op_mode = idx;
++        return SR_OK;
++    case SR_CONF_VOLTAGE_THRESHOLD:
++        g_variant_get(data, "(dd)", &devc->threshold_voltage, NULL);
++        return SR_OK;
++    default:
++        return SR_ERR_NA;
++    }
++}
++
++static int config_list(uint32_t key, GVariant **data,
++    const struct sr_dev_inst *sdi, const struct sr_channel_group *cg)
++{
++    switch (key) {
++    case SR_CONF_SAMPLERATE:
++        *data = std_gvar_samplerates(samplerates, ARRAY_SIZE(samplerates));
++        return SR_OK;
++    case SR_CONF_THRESHOLD:
++        *data = g_variant_new_strv(ARRAY_AND_SIZE(threshold_strs));
++        return SR_OK;
++    case SR_CONF_OPERATION_MODE:
++        *data = g_variant_new_strv(ARRAY_AND_SIZE(op_mode_strs));
++        return SR_OK;
++    case SR_CONF_VOLTAGE_THRESHOLD:
++        *data = std_gvar_thresholds(ARRAY_AND_SIZE(threshold_ranges));
++        return SR_OK;
++    default:
++        return STD_CONFIG_LIST(key, data, sdi, cg, scanopts, drvopts, devopts);
++    }
++}
++
++static void deinterleave_dla32_samples(uint8_t *dest, const uint8_t *src, size_t num_frames,
++                                       int num_enabled_channels, size_t unitsize)
++{
++    /* Hardware frame size on wire is `unitsize * 8` bytes (1 byte per enabled channel for 8 time-steps).
++     * frame[i] contains 8 bits (s=0..7) for enabled channel i.
++     * Output: `unitsize` bytes per time-step in `dest` for sample-interleaved LA_SPLIT_DATA.
++     */
++    size_t hw_frame_size = unitsize * 8;
++    for (size_t f = 0; f < num_frames; f++) {
++        const uint8_t *frame = src + (f * hw_frame_size);
++        uint8_t *out_frame = dest + (f * 8 * unitsize);
++
++        for (int s = 0; s < 8; s++) {
++            uint8_t *sample_ptr = out_frame + (s * unitsize);
++            memset(sample_ptr, 0, unitsize);
++            for (int i = 0; i < num_enabled_channels; i++) {
++                if ((frame[i] >> s) & 1)
++                    sample_ptr[i / 8] |= (1U << (i % 8));
++            }
++        }
++    }
++}
++
++int fnirsi_dla32_handle_events(int fd, int revents, void *cb_data)
++{
++    struct sr_dev_inst *sdi = cb_data;
++    struct dev_context *devc = sdi ? sdi->priv : NULL;
++    struct sr_usb_dev_inst *usb = sdi ? sdi->conn : NULL;
++    uint8_t *buffer;
++    uint8_t *logic_buf;
++    struct sr_datafeed_logic logic;
++    struct sr_datafeed_packet packet;
++
++    (void)fd;
++    (void)revents;
++    if (!sdi || !devc || devc->abort_acquisition)
++        return G_SOURCE_REMOVE;
++
++    size_t hw_frame_size = devc->unitsize * 8;
++    if (hw_frame_size == 0)
++        hw_frame_size = 8;
++
++    buffer = g_malloc(FNIRSI_DLA32_STREAM_SIZE);
++    logic_buf = g_malloc(FNIRSI_DLA32_STREAM_SIZE);
++
++#ifdef _WIN32
++    if (devc->use_ch375 && fn_CH375ReadEndP) {
++        while (!devc->abort_acquisition) {
++            ULONG read_len = FNIRSI_DLA32_STREAM_SIZE;
++            if (!fn_CH375ReadEndP(devc->ch375_index, 1, buffer, &read_len) || read_len == 0)
++                break;
++
++            size_t num_frames = read_len / hw_frame_size;
++            if (num_frames == 0)
++                continue;
++
++            deinterleave_dla32_samples(logic_buf, buffer, num_frames,
++                devc->num_enabled_channels, devc->unitsize);
++            uint64_t samples_in_chunk = num_frames * 8;
++            if (devc->limit_samples && devc->samples_received + samples_in_chunk >= devc->limit_samples) {
++                samples_in_chunk = devc->limit_samples - devc->samples_received;
++                devc->abort_acquisition = TRUE;
++            }
++
++            if (samples_in_chunk > 0) {
++                logic.length = (int)(samples_in_chunk * devc->unitsize);
++                logic.unitsize = (uint16_t)devc->unitsize;
++                logic.format = LA_SPLIT_DATA;
++                logic.data = logic_buf;
++                packet.type = SR_DF_LOGIC;
++                packet.payload = &logic;
++                sr_session_send(sdi, &packet);
++
++                devc->samples_received += samples_in_chunk;
++            }
++
++            if (devc->abort_acquisition) {
++                uint8_t stop_cmd[FNIRSI_DLA32_COMMAND_SIZE];
++                make_stop_command(stop_cmd);
++                send_command(sdi, stop_cmd);
++                std_session_send_df_end(sdi);
++                g_free(buffer);
++                g_free(logic_buf);
++                return G_SOURCE_REMOVE;
++            }
++        }
++    } else
++#endif
++    {
++        int transferred = 0;
++        int ret = 0;
++        if (usb && usb->devhdl) {
++            ret = libusb_bulk_transfer(usb->devhdl, FNIRSI_DLA32_EP_IN,
++                buffer, FNIRSI_DLA32_STREAM_SIZE, &transferred, 200);
++        }
++
++        if (transferred > 0) {
++            size_t num_frames = (size_t)transferred / hw_frame_size;
++            if (num_frames > 0) {
++                deinterleave_dla32_samples(logic_buf, buffer, num_frames,
++                    devc->num_enabled_channels, devc->unitsize);
++                uint64_t samples_in_chunk = num_frames * 8;
++                if (devc->limit_samples && devc->samples_received + samples_in_chunk >= devc->limit_samples) {
++                    samples_in_chunk = devc->limit_samples - devc->samples_received;
++                    devc->abort_acquisition = TRUE;
++                }
++
++                if (samples_in_chunk > 0) {
++                    logic.length = (int)(samples_in_chunk * devc->unitsize);
++                    logic.unitsize = (uint16_t)devc->unitsize;
++                    logic.format = LA_SPLIT_DATA;
++                    logic.data = logic_buf;
++                    packet.type = SR_DF_LOGIC;
++                    packet.payload = &logic;
++                    sr_session_send(sdi, &packet);
++
++                    devc->samples_received += samples_in_chunk;
++                }
++
++                if (devc->abort_acquisition) {
++                    uint8_t stop_cmd[FNIRSI_DLA32_COMMAND_SIZE];
++                    make_stop_command(stop_cmd);
++                    send_command(sdi, stop_cmd);
++                    std_session_send_df_end(sdi);
++                    g_free(buffer);
++                    g_free(logic_buf);
++                    return G_SOURCE_REMOVE;
++                }
++            }
++        }
++
++        if (ret != 0 && ret != LIBUSB_ERROR_TIMEOUT) {
++            sr_err("DLA32 stream transfer failed: %s.", libusb_error_name(ret));
++            devc->abort_acquisition = TRUE;
++            std_session_send_df_end(sdi);
++            g_free(buffer);
++            g_free(logic_buf);
++            return G_SOURCE_REMOVE;
++        }
++    }
++
++    g_free(buffer);
++    g_free(logic_buf);
++    return G_SOURCE_CONTINUE;
++}
++
++static int dev_acquisition_start(const struct sr_dev_inst *sdi)
++{
++    struct dev_context *devc = sdi ? sdi->priv : NULL;
++    uint8_t command[FNIRSI_DLA32_COMMAND_SIZE];
++    int enabled_count = 0;
++    uint32_t channel_mask = 0;
++
++    if (!sdi || !devc)
++        return SR_ERR_ARG;
++
++    for (GSList *l = sdi->channels; l; l = l->next) {
++        struct sr_channel *ch = l->data;
++        if (ch->type == SR_CHANNEL_LOGIC && ch->enabled) {
++            devc->channel_map[enabled_count++] = ch->index;
++            channel_mask |= (1U << ch->index);
++        }
++    }
++    if (enabled_count == 0) {
++        for (int i = 0; i < 32; i++)
++            devc->channel_map[i] = i;
++        enabled_count = 32;
++        channel_mask = 0xffffffff;
++    }
++    devc->num_enabled_channels = enabled_count;
++    devc->unitsize = (enabled_count + 7) / 8;
++
++    if (!make_setup_command(command, devc))
++        return SR_ERR_ARG;
++    if (send_command((struct sr_dev_inst *)sdi, command) != SR_OK)
++        return SR_ERR;
++
++    g_usleep(10000);
++
++    make_channel_command(command, channel_mask);
++    if (send_command((struct sr_dev_inst *)sdi, command) != SR_OK)
++        return SR_ERR;
++
++    devc->abort_acquisition = FALSE;
++    devc->samples_received = 0;
++    std_session_send_df_header(sdi);
++    std_session_send_df_trigger(sdi);
++    return sr_session_source_add(sdi->session, -1, 0, 10,
++        fnirsi_dla32_handle_events, (void *)sdi);
++}
++
++static int dev_acquisition_stop(struct sr_dev_inst *sdi)
++{
++    struct dev_context *devc = sdi ? sdi->priv : NULL;
++    uint8_t command[FNIRSI_DLA32_COMMAND_SIZE];
++
++    if (!sdi || !devc)
++        return SR_ERR_ARG;
++
++    if (!devc->abort_acquisition) {
++        devc->abort_acquisition = TRUE;
++        sr_session_source_remove(sdi->session, -1);
++
++        make_stop_command(command);
++        send_command(sdi, command);
++        std_session_send_df_end(sdi);
++    }
++    return SR_OK;
++}
++
++static struct sr_dev_driver fnirsi_dla32_driver_info = {
++    .name = "fnirsi-dla32",
++    .longname = "FNIRSI DLA-32 (captured USB protocol)",
++    .api_version = 1,
++    .init = std_init,
++    .cleanup = std_cleanup,
++    .scan = scan,
++    .dev_list = std_dev_list,
++    .dev_clear = dev_clear,
++    .config_get = config_get,
++    .config_set = config_set,
++    .config_list = config_list,
++    .dev_open = dev_open,
++    .dev_close = dev_close,
++    .dev_acquisition_start = dev_acquisition_start,
++    .dev_acquisition_stop = dev_acquisition_stop,
++    .context = NULL,
++};
++
++SR_REGISTER_DEV_DRIVER(fnirsi_dla32_driver_info);
+diff --git a/src/hardware/fnirsi-dla32/protocol.h b/src/hardware/fnirsi-dla32/protocol.h
+new file mode 100644
+index 00000000..c33d8515
+--- /dev/null
++++ b/src/hardware/fnirsi-dla32/protocol.h
+@@ -0,0 +1,41 @@
++#ifndef LIBSIGROK_HARDWARE_FNIRSI_DLA32_PROTOCOL_H
++#define LIBSIGROK_HARDWARE_FNIRSI_DLA32_PROTOCOL_H
++
++/* AI-generated with assistance from GitHub Copilot.
++ * Model: GitHub Copilot; the underlying model identifier was not exposed.
++ * Human review and hardware validation were performed for this integration. */
++
++#include <stdint.h>
++#include <glib.h>
++#include <libsigrok/libsigrok.h>
++#include "libsigrok-internal.h"
++
++#define LOG_PREFIX "fnirsi-dla32"
++#define FNIRSI_DLA32_VID 0x0986
++#define FNIRSI_DLA32_VID2 0x1a86
++#define FNIRSI_DLA32_PID 0x5537
++#define FNIRSI_DLA32_INTERFACE 0
++#define FNIRSI_DLA32_EP_OUT 0x02
++#define FNIRSI_DLA32_EP_IN 0x81
++#define FNIRSI_DLA32_COMMAND_SIZE 2048
++#define FNIRSI_DLA32_STREAM_SIZE 65536
++#define FNIRSI_DLA32_SAMPLERATE SR_MHZ(50)
++
++struct dev_context {
++    uint64_t samplerate;
++    uint64_t limit_samples;
++    uint64_t samples_received;
++    gboolean abort_acquisition;
++    gboolean use_ch375;
++    uint32_t ch375_index;
++    size_t unitsize;
++    int num_enabled_channels;
++    int channel_map[32];
++    int threshold_sel;
++    int op_mode;
++    double threshold_voltage;
++};
++
++SR_PRIV int fnirsi_dla32_handle_events(int fd, int revents, void *cb_data);
++
++#endif

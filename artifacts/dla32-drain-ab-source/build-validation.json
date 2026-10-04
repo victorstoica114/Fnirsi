@@ -1,0 +1,82 @@
+{
+  "scope": "hardware-free build, simulations, package provenance and integrity only",
+  "alignment_fix_established": false,
+  "changed_source_files": [
+    "src/hardware/fnirsi-dla32/api.c"
+  ],
+  "copied_source_files": 489,
+  "patch_sha256": "c6e7aad170e48062f85420068a4a9804da570588b70583ff8e8e65418d1a26fd",
+  "source_manifest_sha256": "052b3799bc390e96cce715231e2f428f34ec5768ea3424e98cfcd75388245dd5",
+  "source_hashes_sha256": "69f8a4a089ef886d6c5c71bdcc260a84971ad04f8e41f05a5a71b8e27ca49609",
+  "packages": [
+    {
+      "variant": "baseline",
+      "prearm_empty_reads": 1,
+      "package": "D:\\Documente\\analizor logic\\artifacts\\dla32-drain-ab-baseline",
+      "package_manifest_sha256": "fa4e56812fd9068a401b00f17c9b41266e1d3accba2b78527c0223a75d9b5152",
+      "dll_sha256": "b3d3b7082367db88ada7a1d285accf2877ffc2b9f6f17fd664222106f27c1662",
+      "make_check": {
+        "checks": 92,
+        "failures": 0,
+        "errors": 0
+      },
+      "driver_fixture": {
+        "checks": 443,
+        "failures": 0,
+        "log_sha256": "f47a1d9bf653382aead1b147ba710c7e934e17acacb7c17f9ddcde3b1ff62bd7"
+      },
+      "harness_selftest_passed": true,
+      "harness_selftest_log_sha256": "d7476fc193389e55602a1e12ee6d312d245b4dd375f9344c23ec428acbf189f4"
+    },
+    {
+      "variant": "two-empty",
+      "prearm_empty_reads": 2,
+      "package": "D:\\Documente\\analizor logic\\artifacts\\dla32-drain-ab-two-empty",
+      "package_manifest_sha256": "4fafcca92f8ce7e93e24c20a35388ca225013efd6b256be4ef28d4002d04a557",
+      "dll_sha256": "67e5a15825fb3aae5ad310f3c482b29899bcaf3db423ef202adb9188835d8b88",
+      "make_check": {
+        "checks": 92,
+        "failures": 0,
+        "errors": 0
+      },
+      "driver_fixture": {
+        "checks": 443,
+        "failures": 0,
+        "log_sha256": "6bc710e72559743265f54b881af4e0f0eb9245c1bc58da1a0e649b3b8649b602"
+      },
+      "harness_selftest_passed": true,
+      "harness_selftest_log_sha256": "d7476fc193389e55602a1e12ee6d312d245b4dd375f9344c23ec428acbf189f4"
+    }
+  ],
+  "decoder_protocol": [
+    {
+      "mode": "simd",
+      "checks": 134930,
+      "passed": true,
+      "log_sha256": "9f21d15ac643b61fe09668d4871c2a07db30a3df2c6aae905ac5ecba298c5407"
+    },
+    {
+      "mode": "table",
+      "checks": 134930,
+      "passed": true,
+      "log_sha256": "9f21d15ac643b61fe09668d4871c2a07db30a3df2c6aae905ac5ecba298c5407"
+    }
+  ],
+  "compile_policy_guards": {
+    "checks": 3,
+    "passed": true,
+    "log_sha256": "0f89c6f6ad708bd234df3fafb7c4b04c0fb2493de161ed8e6b75522fc77c35e0"
+  },
+  "existing_runtime_dll_sha256": {
+    "DLA32": "76bfe1e98b37a5af01dcd39f453125978a5bfa86d622d49b5098ba4b226b7049",
+    "Kingst": "90e3efc04c2f799a30ec45258954fb3f62e1fcbc79bcbedc36d2e61c9364bdd7",
+    "diagnostic": "d299cc594f24f9e737db21b95f70f78791fe5ecf6bd81af724ab48854089d869"
+  },
+  "tools_sha256": {
+    "prepare_dla32_drain_ab.py": "32da32a31e771e2194533fc4308c90610ce3430608a0f6e56f860073d21cd05c",
+    "build_dla32_drain_ab_variants.sh": "516f2db8929f6effd3433c025cc1433d20b3ec7faa860c57a94e4e14541a2ce2",
+    "test_dla32_drain_ab_guards.sh": "29edaf2da8ed56243c6a52f5a7c5aba336f1d82824fe4e82e752e30e3c62c6e3",
+    "package_dla32_drain_ab.py": "e84f7d6cbeddbf1d2f66ce25895fa24f168cc27828eaf8e42f940090a6e0385e",
+    "verify_dla32_drain_ab_packages.py": "9ef36091ffce49dd90931a520d5c8bbd0a4be74fe5de7ba9638578f2fa5e05ce"
+  }
+}

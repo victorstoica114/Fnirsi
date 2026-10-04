@@ -1,0 +1,166 @@
+--- a/src/hardware/fnirsi-dla32/api.c
++++ b/src/hardware/fnirsi-dla32/api.c
+@@ -61,10 +61,9 @@
+ #ifdef _WIN32
+ 	struct dla_wch wch;
+ 	gboolean use_wch;
+-#if DLA_WCH_UPLOAD_DIAGNOSTIC
+-	/* Survives application END until capture STOP succeeds. */
++	/* Hardware STOP ownership is independent of the optional SDK queue.
++	 * Keep the existing internal name; survives END in both SDK0 and SDK1. */
+ 	gboolean upload_stop_pending;
+-#endif
+ 	uint8_t *wch_buffer;
+ #endif
+ 	struct sr_sw_limits limits;
+@@ -100,11 +99,22 @@
+ 	return devc->acquiring || devc->source_added || devc->submitted_transfers;
+ }
+ 
++#ifdef _WIN32
++static gboolean has_wch_stop_ownership(const struct dev_context *devc)
++{
++	return devc->upload_stop_pending
++#if DLA_WCH_UPLOAD_DIAGNOSTIC
++		|| devc->wch.upload_dirty
++#endif
++		;
++}
++#endif
++
+ static gboolean has_acquisition_resources(const struct dev_context *devc)
+ {
+ 	return has_application_resources(devc)
+-#if defined(_WIN32) && DLA_WCH_UPLOAD_DIAGNOSTIC
+-		|| (devc->use_wch && (devc->wch.upload_dirty || devc->upload_stop_pending))
++#ifdef _WIN32
++		|| (devc->use_wch && has_wch_stop_ownership(devc))
+ #endif
+ 		;
+ }
+@@ -541,7 +551,7 @@
+ 	return SR_OK;
+ }
+ 
+-#if defined(_WIN32) && DLA_WCH_UPLOAD_DIAGNOSTIC
++#ifdef _WIN32
+ static void drain_stopped_endpoint(const struct sr_dev_inst *sdi);
+ 
+ static int stop_wch_capture(const struct sr_dev_inst *sdi, const char *phase)
+@@ -553,19 +563,30 @@
+ 	/* An attempted disable or STOP may leave device capture state unknown.
+ 	 * This ownership is separate from SDK queue and application resources. */
+ 	devc->upload_stop_pending = TRUE;
++#if DLA_WCH_UPLOAD_DIAGNOSTIC
+ 	ret = dla_wch_upload_retire(&devc->wch, phase);
+ 	if (ret != SR_OK) {
+ 		sr_err("WCH UPLOAD capture STOP deferred: phase %s; SDK retirement failed.", phase);
+ 		return ret;
+ 	}
++#endif
++
+ 	dla_stop(packet);
+ 	ret = send_command(sdi, packet);
+ 	if (ret != SR_OK) {
++#if DLA_WCH_UPLOAD_DIAGNOSTIC
+ 		sr_err("WCH UPLOAD capture STOP failed: phase %s; pending ownership retained.", phase);
++#else
++		sr_err("WCH capture STOP failed: phase %s; pending ownership retained.", phase);
++#endif
+ 		return ret;
+ 	}
+ 	devc->upload_stop_pending = FALSE;
++#if DLA_WCH_UPLOAD_DIAGNOSTIC
+ 	sr_info("WCH UPLOAD capture STOP complete: phase %s; disable precedes STOP.", phase);
++#else
++	sr_info("WCH capture STOP complete: phase %s; command accepted.", phase);
++#endif
+ 	return SR_OK;
+ }
+ #endif
+@@ -613,6 +634,16 @@
+ 			}
+ 			if (pending)
+ 				drain_stopped_endpoint(sdi);
++		}
++#else
++		if (devc->upload_stop_pending) {
++			int ret = stop_wch_capture(sdi, "close");
++			if (ret != SR_OK) {
++				sr_err("WCH close refused: pending capture STOP retirement failed.");
++				sdi->status = SR_ST_ACTIVE;
++				return ret;
++			}
++			drain_stopped_endpoint(sdi);
+ 		}
+ #endif
+ 		dla_wch_close(&devc->wch);
+@@ -691,7 +722,11 @@
+ 	unsigned int i;
+ 	gboolean enabled;
+ 
+-	if (devc->acquiring)
++	if (devc->acquiring
++#ifdef _WIN32
++			|| (devc->use_wch && has_wch_stop_ownership(devc))
++#endif
++			)
+ 		return SR_ERR;
+ 	if (cg) {
+ 		pwm_index = pwm_group_index(sdi, cg);
+@@ -1171,9 +1206,13 @@
+ 	unsigned int empty = 0;
+ 	int count, length, ret;
+ 
+-#if defined(_WIN32) && DLA_WCH_UPLOAD_DIAGNOSTIC
+-	if (devc->use_wch && (devc->wch.upload_dirty || devc->upload_stop_pending)) {
++#ifdef _WIN32
++	if (devc->use_wch && has_wch_stop_ownership(devc)) {
++#if DLA_WCH_UPLOAD_DIAGNOSTIC
+ 		sr_err("WCH UPLOAD post-stop drain skipped: SDK queue dirty or capture STOP pending.");
++#else
++		sr_err("WCH post-stop drain skipped: capture STOP pending.");
++#endif
+ 		return;
+ 	}
+ #endif
+@@ -1218,7 +1257,7 @@
+ 		return;
+ 	devc->cancel_requested = TRUE;
+ 	cancel_transfers(devc);
+-#if defined(_WIN32) && DLA_WCH_UPLOAD_DIAGNOSTIC
++#ifdef _WIN32
+ 	if (devc->use_wch) {
+ 		devc->stop_sent = stop_wch_capture(sdi, "stop") == SR_OK;
+ 		return;
+@@ -1567,12 +1606,17 @@
+ 
+ 	/* Retire SDK read ownership before writing capture STOP; the observed
+ 	 * active-upload STOP failure is not assumed to be a universal SDK rule. */
+-#if defined(_WIN32) && DLA_WCH_UPLOAD_DIAGNOSTIC
++#ifdef _WIN32
+ 	if (devc->use_wch) {
+ 		if (stop_wch_capture(sdi, "pre-arm") != SR_OK) {
+ 			/* Startup still fails if its one explicit cleanup retry succeeds. */
+-			if (stop_wch_capture(sdi, "failed-start") != SR_OK)
++			if (stop_wch_capture(sdi, "failed-start") != SR_OK) {
++#if DLA_WCH_UPLOAD_DIAGNOSTIC
+ 				sr_err("WCH UPLOAD failed-start retains SDK or pending STOP ownership.");
++#else
++				sr_err("WCH failed-start retains pending STOP ownership.");
++#endif
++			}
+ 			else
+ 				drain_stopped_endpoint(sdi);
+ 			free_prepared_transfers(devc);
+@@ -1721,8 +1765,8 @@
+ 
+ 	if (devc->acquiring)
+ 		request_stop(devc);
+-#if defined(_WIN32) && DLA_WCH_UPLOAD_DIAGNOSTIC
+-	else if (devc->use_wch && (devc->wch.upload_dirty || devc->upload_stop_pending)) {
++#ifdef _WIN32
++	else if (devc->use_wch && has_wch_stop_ownership(devc)) {
+ 		int ret = stop_wch_capture(sdi, "inactive-stop");
+ 		if (ret == SR_OK)
+ 			drain_stopped_endpoint(sdi);

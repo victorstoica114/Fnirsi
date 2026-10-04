@@ -1,0 +1,171 @@
+--- a/src/hardware/fnirsi-dla32/api.c
++++ b/src/hardware/fnirsi-dla32/api.c
+@@ -61,6 +61,10 @@
+ #ifdef _WIN32
+ 	struct dla_wch wch;
+ 	gboolean use_wch;
++#if DLA_WCH_UPLOAD_DIAGNOSTIC
++	/* Survives application END until capture STOP succeeds. */
++	gboolean upload_stop_pending;
++#endif
+ 	uint8_t *wch_buffer;
+ #endif
+ 	struct sr_sw_limits limits;
+@@ -100,7 +104,7 @@
+ {
+ 	return has_application_resources(devc)
+ #if defined(_WIN32) && DLA_WCH_UPLOAD_DIAGNOSTIC
+-		|| (devc->use_wch && devc->wch.upload_dirty)
++		|| (devc->use_wch && (devc->wch.upload_dirty || devc->upload_stop_pending))
+ #endif
+ 		;
+ }
+@@ -537,6 +541,35 @@
+ 	return SR_OK;
+ }
+ 
++#if defined(_WIN32) && DLA_WCH_UPLOAD_DIAGNOSTIC
++static void drain_stopped_endpoint(const struct sr_dev_inst *sdi);
++
++static int stop_wch_capture(const struct sr_dev_inst *sdi, const char *phase)
++{
++	struct dev_context *devc = sdi->priv;
++	uint8_t packet[DLA_COMMAND_SIZE];
++	int ret;
++
++	/* An attempted disable or STOP may leave device capture state unknown.
++	 * This ownership is separate from SDK queue and application resources. */
++	devc->upload_stop_pending = TRUE;
++	ret = dla_wch_upload_retire(&devc->wch, phase);
++	if (ret != SR_OK) {
++		sr_err("WCH UPLOAD capture STOP deferred: phase %s; SDK retirement failed.", phase);
++		return ret;
++	}
++	dla_stop(packet);
++	ret = send_command(sdi, packet);
++	if (ret != SR_OK) {
++		sr_err("WCH UPLOAD capture STOP failed: phase %s; pending ownership retained.", phase);
++		return ret;
++	}
++	devc->upload_stop_pending = FALSE;
++	sr_info("WCH UPLOAD capture STOP complete: phase %s; disable precedes STOP.", phase);
++	return SR_OK;
++}
++#endif
++
+ static int send_pwm_config(const struct sr_dev_inst *sdi, unsigned int index,
+ 	const struct pwm_setting *setting)
+ {
+@@ -569,13 +602,17 @@
+ #ifdef _WIN32
+ 	if (devc->use_wch) {
+ #if DLA_WCH_UPLOAD_DIAGNOSTIC
+-		if (devc->wch.opened || devc->wch.upload_dirty) {
+-			int ret = dla_wch_upload_retire(&devc->wch, "close");
++		if (devc->wch.opened || devc->wch.upload_dirty || devc->upload_stop_pending) {
++			gboolean pending = devc->upload_stop_pending;
++			int ret = pending ? stop_wch_capture(sdi, "close") :
++				dla_wch_upload_retire(&devc->wch, "close");
+ 			if (ret != SR_OK) {
+-				sr_err("WCH UPLOAD close refused: SDK queue retirement failed.");
++				sr_err("WCH UPLOAD close refused: SDK or pending capture STOP retirement failed.");
+ 				sdi->status = SR_ST_ACTIVE;
+ 				return ret;
+ 			}
++			if (pending)
++				drain_stopped_endpoint(sdi);
+ 		}
+ #endif
+ 		dla_wch_close(&devc->wch);
+@@ -1135,8 +1172,8 @@
+ 	int count, length, ret;
+ 
+ #if defined(_WIN32) && DLA_WCH_UPLOAD_DIAGNOSTIC
+-	if (devc->use_wch && devc->wch.upload_dirty) {
+-		sr_err("WCH UPLOAD post-stop drain skipped: SDK queue state remains dirty.");
++	if (devc->use_wch && (devc->wch.upload_dirty || devc->upload_stop_pending)) {
++		sr_err("WCH UPLOAD post-stop drain skipped: SDK queue dirty or capture STOP pending.");
+ 		return;
+ 	}
+ #endif
+@@ -1181,14 +1218,16 @@
+ 		return;
+ 	devc->cancel_requested = TRUE;
+ 	cancel_transfers(devc);
++#if defined(_WIN32) && DLA_WCH_UPLOAD_DIAGNOSTIC
++	if (devc->use_wch) {
++		devc->stop_sent = stop_wch_capture(sdi, "stop") == SR_OK;
++		return;
++	}
++#endif
+ 	dla_stop(packet);
+ 	devc->stop_sent = TRUE;
+ 	if (send_command(sdi, packet) != SR_OK)
+ 		sr_err("Failed to send the acquisition stop command.");
+-#if defined(_WIN32) && DLA_WCH_UPLOAD_DIAGNOSTIC
+-	if (devc->use_wch && dla_wch_upload_retire(&devc->wch, "stop") != SR_OK)
+-		sr_err("WCH UPLOAD stop retirement failed; SDK dirty ownership retained.");
+-#endif
+ }
+ 
+ static void rollback_acquisition(struct sr_dev_inst *sdi)
+@@ -1526,24 +1565,28 @@
+ 	sr_info("PREARM drain policy: %u consecutive empty reads.",
+ 		(unsigned int)DLA_PREARM_EMPTY_READS);
+ 
+-	/* Stop and drain stale data before arming the new asynchronous queue. */
+-	dla_stop(packet);
+-	if (send_command(sdi, packet) != SR_OK) {
+-		free_prepared_transfers(devc);
+-		return SR_ERR_IO;
+-	}
++	/* Retire SDK read ownership before writing capture STOP; the observed
++	 * active-upload STOP failure is not assumed to be a universal SDK rule. */
+ #if defined(_WIN32) && DLA_WCH_UPLOAD_DIAGNOSTIC
+-	if (devc->use_wch && dla_wch_upload_retire(&devc->wch, "pre-arm") != SR_OK) {
+-		/* Startup must fail even if the subsequent retirement retry succeeds. */
++	if (devc->use_wch) {
++		if (stop_wch_capture(sdi, "pre-arm") != SR_OK) {
++			/* Startup still fails if its one explicit cleanup retry succeeds. */
++			if (stop_wch_capture(sdi, "failed-start") != SR_OK)
++				sr_err("WCH UPLOAD failed-start retains SDK or pending STOP ownership.");
++			else
++				drain_stopped_endpoint(sdi);
++			free_prepared_transfers(devc);
++			return SR_ERR_IO;
++		}
++	} else
++#endif
++	{
+ 		dla_stop(packet);
+-		if (send_command(sdi, packet) != SR_OK)
+-			sr_err("WCH UPLOAD failed-start rollback STOP failed.");
+-		if (dla_wch_upload_retire(&devc->wch, "failed-start") != SR_OK)
+-			sr_err("WCH UPLOAD failed-start retains SDK dirty ownership.");
+-		free_prepared_transfers(devc);
+-		return SR_ERR_IO;
+-	}
+-#endif
++		if (send_command(sdi, packet) != SR_OK) {
++			free_prepared_transfers(devc);
++			return SR_ERR_IO;
++		}
++	}
+ 	drain_deadline = g_get_monotonic_time() + STOP_DRAIN_USEC;
+ 	for (i = 0; i < 64; i++) {
+ 		count = 0;
+@@ -1679,8 +1722,12 @@
+ 	if (devc->acquiring)
+ 		request_stop(devc);
+ #if defined(_WIN32) && DLA_WCH_UPLOAD_DIAGNOSTIC
+-	else if (devc->use_wch && devc->wch.upload_dirty)
+-		return SR_ERR_IO;
++	else if (devc->use_wch && (devc->wch.upload_dirty || devc->upload_stop_pending)) {
++		int ret = stop_wch_capture(sdi, "inactive-stop");
++		if (ret == SR_OK)
++			drain_stopped_endpoint(sdi);
++		return ret;
++	}
+ #endif
+ 	return SR_OK;
+ }

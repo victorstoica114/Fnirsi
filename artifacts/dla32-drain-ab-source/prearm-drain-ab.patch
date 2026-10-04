@@ -1,0 +1,63 @@
+--- a/src/hardware/fnirsi-dla32/api.c
++++ b/src/hardware/fnirsi-dla32/api.c
+@@ -37,6 +37,13 @@
+ #define STOP_DRAIN_USEC (3 * G_TIME_SPAN_SECOND)
+ #define STOP_DRAIN_BYTES (UINT64_C(64) * 1024 * 1024)
+ #define STOP_EMPTY_READS 2
++/* Isolated A/B diagnostic; the production policy remains one empty read. */
++#ifndef DLA_PREARM_EMPTY_READS
++#define DLA_PREARM_EMPTY_READS 1
++#endif
++#if DLA_PREARM_EMPTY_READS != 1 && DLA_PREARM_EMPTY_READS != 2
++#error "DLA_PREARM_EMPTY_READS must be 1 or 2"
++#endif
+ #define DATA_STALL_USEC (3 * G_TIME_SPAN_SECOND)
+ 
+ #include "transport-wch.h"
+@@ -1425,6 +1432,7 @@
+ 	uint8_t conditions[DLA_CHANNELS], packet[DLA_COMMAND_SIZE];
+ 	uint64_t samples, maximum, first_data_msec;
+ 	uint64_t drain_total = 0;
++	unsigned int drain_empty = 0;
+ 	uint32_t mask;
+ 	int count, ret, i;
+ 	int64_t drain_deadline;
+@@ -1472,6 +1480,9 @@
+ 		return ret;
+ 	}
+ 
++	sr_info("PREARM drain policy: %u consecutive empty reads.",
++		(unsigned int)DLA_PREARM_EMPTY_READS);
++
+ 	/* Stop and drain stale data before arming the new asynchronous queue. */
+ 	dla_stop(packet);
+ 	if (send_command(sdi, packet) != SR_OK) {
+@@ -1489,8 +1500,13 @@
+ 		sr_dbg("Pre-arm drain %d: status %d, %d bytes.", i, ret, count);
+ 		if (count > 0)
+ 			drain_total += count;
+-		if ((ret == LIBUSB_SUCCESS || ret == LIBUSB_ERROR_TIMEOUT) && !count)
+-			break;
++		if ((ret == LIBUSB_SUCCESS || ret == LIBUSB_ERROR_TIMEOUT) && !count) {
++			drain_empty++;
++			if (drain_empty >= DLA_PREARM_EMPTY_READS)
++				break;
++		} else {
++			drain_empty = 0;
++		}
+ 		if (ret && ret != LIBUSB_ERROR_TIMEOUT) {
+ 			free_prepared_transfers(devc);
+ 			return SR_ERR_IO;
+@@ -1507,8 +1523,10 @@
+ 		return SR_ERR_IO;
+ 	}
+ 	if (devc->wire_trace)
+-		sr_dbg("WIRE pre-arm drain summary: discarded %" PRIu64 ", mod32 %u, reads %d.",
+-			drain_total, (unsigned int)(drain_total % 32), i + 1);
++		sr_dbg("WIRE pre-arm drain summary: discarded %" PRIu64 ", mod32 %u, reads %d,"
++			" empty_reads %u, required_empty_reads %u.",
++			drain_total, (unsigned int)(drain_total % 32), i + 1,
++			drain_empty, (unsigned int)DLA_PREARM_EMPTY_READS);
+ 
+ 	if (legacy_path)
+ 		dla_setup(packet, ((const uint16_t[]) { 60, 160, 250 })[devc->threshold],

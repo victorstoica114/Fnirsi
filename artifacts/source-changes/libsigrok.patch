@@ -1,0 +1,2233 @@
+diff --git a/Makefile.am b/Makefile.am
+index a35e29e..232d143 100644
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -375,6 +375,12 @@ src_libdrivers_la_SOURCES += \
+ 	src/hardware/fnirsi-dla16/protocol.h \
+ 	src/hardware/fnirsi-dla16/api.c
+ endif
++if HW_FNIRSI_DLA32
++src_libdrivers_la_SOURCES += \
++    src/hardware/fnirsi-dla32/protocol.h \
++    src/hardware/fnirsi-dla32/transport-wch.h \
++    src/hardware/fnirsi-dla32/api.c
++endif
+ if HW_FTDI_LA
+ src_libdrivers_la_SOURCES += \
+ 	src/hardware/ftdi-la/protocol.h \
+diff --git a/configure.ac b/configure.ac
+index d6febba..55b9959 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -331,6 +331,7 @@ SR_DRIVER([DreamSourceLab DSLogic], [dreamsourcelab-dslogic], [libusb])
+ SR_DRIVER([Fluke 45], [fluke-45])
+ SR_DRIVER([Fluke DMM], [fluke-dmm], [serial_comm])
+ SR_DRIVER([FNIRSI DLA-16], [fnirsi-dla16], [libusb])
++SR_DRIVER([FNIRSI DLA-32], [fnirsi-dla32], [libusb])
+ SR_DRIVER([FTDI LA], [ftdi-la], [libusb libftdi])
+ SR_DRIVER([fx2lafw], [fx2lafw], [libusb])
+ SR_DRIVER([GMC MH 1x/2x], [gmc-mh-1x-2x], [serial_comm])
+diff --git a/src/backend.c b/src/backend.c
+index db21294..2248eef 100644
+--- a/src/backend.c
++++ b/src/backend.c
+@@ -649,21 +649,29 @@ done:
+ /**
+  * Shutdown libsigrok.
+  *
++ * If driver cleanup fails, the context and shared transports remain valid.
++ * Finish stopping the affected acquisition, then retry sr_exit(). Drivers
++ * already cleaned successfully are uninitialized and are skipped on retry.
++ *
+  * @param ctx Pointer to a libsigrok context struct. Must not be NULL.
+  *
+  * @retval SR_OK Success
+- * @retval other Error code SR_ERR, ...
++ * @retval other Error code SR_ERR, ...; the context has not been freed.
+  *
+  * @since 0.2.0
+  */
+ SR_API int sr_exit(struct sr_context *ctx)
+ {
++	int ret;
++
+ 	if (!ctx) {
+ 		sr_err("%s(): libsigrok context was NULL.", __func__);
+ 		return SR_ERR;
+ 	}
+ 
+-	sr_hw_cleanup_all(ctx);
++	ret = sr_hw_cleanup_all(ctx);
++	if (ret != SR_OK)
++		return ret;
+ 
+ #ifdef _WIN32
+ 	WSACleanup();
+diff --git a/src/hwdriver.c b/src/hwdriver.c
+index 4435512..9c404b2 100644
+--- a/src/hwdriver.c
++++ b/src/hwdriver.c
+@@ -595,26 +595,42 @@ SR_API GSList *sr_driver_scan(struct sr_dev_driver *driver, GSList *options)
+ /**
+  * Call driver cleanup function for all drivers.
+  *
++ * Successfully cleaned drivers are marked uninitialized. On the first
++ * failure, leave that driver and all remaining drivers initialized so
++ * cleanup can be retried without cleaning successful drivers twice.
++ *
+  * @param[in] ctx Pointer to a libsigrok context struct. Must not be NULL.
+  *
++ * @retval SR_OK Success.
++ * @retval SR_ERR_ARG Invalid context.
++ * @retval other Driver cleanup failed; the context remains valid.
++ *
+  * @private
+  */
+-SR_PRIV void sr_hw_cleanup_all(const struct sr_context *ctx)
++SR_PRIV int sr_hw_cleanup_all(const struct sr_context *ctx)
+ {
+-	int i;
++	int i, ret;
+ 	struct sr_dev_driver **drivers;
+ 
+ 	if (!ctx)
+-		return;
++		return SR_ERR_ARG;
+ 
+ 	sr_dbg("Cleaning up all drivers.");
+ 
+ 	drivers = sr_driver_list(ctx);
+ 	for (i = 0; drivers[i]; i++) {
+-		if (drivers[i]->cleanup)
+-			drivers[i]->cleanup(drivers[i]);
++		if (!drivers[i]->context)
++			continue;
++		if (drivers[i]->cleanup) {
++			ret = drivers[i]->cleanup(drivers[i]);
++			if (ret != SR_OK) {
++				sr_err("Driver %s cleanup failed: %d.", drivers[i]->name, ret);
++				return ret;
++			}
++		}
+ 		drivers[i]->context = NULL;
+ 	}
++	return SR_OK;
+ }
+ 
+ /**
+diff --git a/src/libsigrok-internal.h b/src/libsigrok-internal.h
+index 8d509eb..79c20d1 100644
+--- a/src/libsigrok-internal.h
++++ b/src/libsigrok-internal.h
+@@ -1810,7 +1810,7 @@ SR_PRIV void sr_usbtmc_dev_inst_free(struct sr_usbtmc_dev_inst *usbtmc);
+ 
+ SR_PRIV const GVariantType *sr_variant_type_get(int datatype);
+ SR_PRIV int sr_variant_type_check(uint32_t key, GVariant *data);
+-SR_PRIV void sr_hw_cleanup_all(const struct sr_context *ctx);
++SR_PRIV int sr_hw_cleanup_all(const struct sr_context *ctx);
+ SR_PRIV struct sr_config *sr_config_new(uint32_t key, GVariant *data);
+ SR_PRIV void sr_config_free(struct sr_config *src);
+ SR_PRIV int sr_dev_acquisition_start(struct sr_dev_inst *sdi);
+diff --git a/src/session.c b/src/session.c
+index 8d3f669..7799a2a 100644
+--- a/src/session.c
++++ b/src/session.c
+@@ -635,11 +635,28 @@ static int set_main_context(struct sr_session *session)
+  */
+ static int unset_main_context(struct sr_session *session)
+ {
++	GSource *source;
+ 	int ret;
+ 
+ 	g_mutex_lock(&session->main_mutex);
+ 
+ 	if (session->main_context) {
++		/* Rolling back a failed start may have removed the final device
++		 * source and queued a stop check which will never be needed. It
++		 * must not retain a session pointer after the caller destroys the
++		 * failed session, or suppress the completion check on retry.
++		 * Find it in its owning context, not the global default context;
++		 * clear the ID before destruction so it cannot refer to a reused
++		 * source ID after this context has been released. The normal stop
++		 * callback clears the ID before calling us, so it is not destroyed
++		 * recursively while it is dispatching. */
++		if (session->stop_check_id) {
++			source = g_main_context_find_source_by_id(session->main_context,
++				session->stop_check_id);
++			session->stop_check_id = 0;
++			if (source)
++				g_source_destroy(source);
++		}
+ 		g_main_context_unref(session->main_context);
+ 		session->main_context = NULL;
+ 		ret = SR_OK;
+diff --git a/src/std.c b/src/std.c
+index 959d000..bf0b6a8 100644
+--- a/src/std.c
++++ b/src/std.c
+@@ -76,7 +76,8 @@ SR_PRIV int std_init(struct sr_dev_driver *di, struct sr_context *sr_ctx)
+  * This function can be used to simplify most driver's cleanup() API callback.
+  *
+  * Free all device instances by calling sr_dev_clear() and then release any
+- * resources allocated by std_init().
++ * resources allocated by std_init(). If clearing fails, the driver context
++ * remains valid so the caller can finish stopping acquisition and retry.
+  *
+  * @param[in] di The driver instance to use. Must not be NULL.
+  *
+@@ -94,9 +95,11 @@ SR_PRIV int std_cleanup(const struct sr_dev_driver *di)
+ 	}
+ 
+ 	ret = sr_dev_clear(di);
++	if (ret != SR_OK)
++		return ret;
+ 	g_free(di->context);
+ 
+-	return ret;
++	return SR_OK;
+ }
+ 
+ /**
+diff --git a/src/strutil.c b/src/strutil.c
+index 5e941e9..afad35a 100644
+--- a/src/strutil.c
++++ b/src/strutil.c
+@@ -560,6 +560,16 @@ SR_API int sr_vsprintf_ascii(char *buf, const char *format, va_list args)
+ #if defined(_WIN32)
+ 	int ret;
+ 
++#if defined(_UCRT)
++	_locale_t numeric_locale;
++
++	numeric_locale = _create_locale(LC_NUMERIC, "C");
++	if (!numeric_locale)
++		return -1;
++	ret = _vsprintf_l(buf, format, numeric_locale, args);
++	_free_locale(numeric_locale);
++	return ret;
++#else
+ #if 0
+ 	/*
+ 	 * TODO: This part compiles with mingw-w64 but doesn't run with Win7.
+@@ -579,6 +589,7 @@ SR_API int sr_vsprintf_ascii(char *buf, const char *format, va_list args)
+ 	ret = vsprintf(buf, format, args);
+ 
+ 	return ret;
++#endif
+ #elif defined(__APPLE__)
+ 	/*
+ 	 * See:
+@@ -733,6 +744,25 @@ SR_API int sr_vsnprintf_ascii(char *buf, size_t buf_size,
+ #if defined(_WIN32)
+ 	int ret;
+ 
++#if defined(_UCRT)
++	_locale_t numeric_locale;
++	va_list count_args;
++
++	/* UCRT has locale-specific formatting. Preserve the C99 required-length
++	 * result and NUL termination even though _vsnprintf_l truncates with -1. */
++	numeric_locale = _create_locale(LC_NUMERIC, "C");
++	if (!numeric_locale)
++		return -1;
++	va_copy(count_args, args);
++	ret = _vscprintf_l(format, numeric_locale, count_args);
++	va_end(count_args);
++	if (ret >= 0 && buf && buf_size) {
++		_vsnprintf_l(buf, buf_size, format, numeric_locale, args);
++		buf[buf_size - 1] = '\0';
++	}
++	_free_locale(numeric_locale);
++	return ret;
++#else
+ #if 0
+ 	/*
+ 	 * TODO: This part compiles with mingw-w64 but doesn't run with Win7.
+@@ -752,6 +782,7 @@ SR_API int sr_vsnprintf_ascii(char *buf, size_t buf_size,
+ 	ret = vsnprintf(buf, buf_size, format, args);
+ 
+ 	return ret;
++#endif
+ #elif defined(__APPLE__)
+ 	/*
+ 	 * See:
+diff --git a/tests/strutil.c b/tests/strutil.c
+index 529df9c..7540cec 100644
+--- a/tests/strutil.c
++++ b/tests/strutil.c
+@@ -148,6 +148,7 @@ static void test_voltage(uint64_t v_p, uint64_t v_q, const char *expected)
+ START_TEST(test_locale)
+ {
+ 	char *old_locale, *saved_locale;
++	char short_buffer[4] = {0, 0, 0, 'X'};
+ 
+ 	/* Get the the current locale. */
+ 	old_locale = setlocale(LC_NUMERIC, NULL);
+@@ -188,6 +189,12 @@ START_TEST(test_locale)
+ 	test_sr_vsprintf_ascii("0.12345", "%.5f", (double)0.12345);
+ 	test_sr_vsprintf_ascii("0.123456", "%.6f", (double)0.123456);
+ 
++	/* Required length, truncation and size-zero queries must also be ASCII. */
++	ck_assert_int_eq(sr_snprintf_ascii(NULL, 0, "%.2f", 1.23), 4);
++	ck_assert_int_eq(sr_snprintf_ascii(short_buffer, 3, "%.2f", 1.23), 4);
++	ck_assert_str_eq(short_buffer, "1.");
++	ck_assert_int_eq(short_buffer[3], 'X');
++
+ #if 0
+ 	/*
+ 	 * These tests can be used to tell on which platforms the printf()
+diff --git a/src/hardware/fnirsi-dla32/api.c b/src/hardware/fnirsi-dla32/api.c
+new file mode 100644
+index 0000000..443df45
+--- /dev/null
++++ b/src/hardware/fnirsi-dla32/api.c
+@@ -0,0 +1,1456 @@
++// SPDX-License-Identifier: GPL-3.0-only
++/*
++ * Copyright (C) 2026 whatshu <shussm@qq.com>
++ *
++ * FNIRSI DLA-32 experimental driver. Protocol reference:
++ * https://github.com/TechBirdCompany/PXView-DLA32-overlay (GPL-3.0).
++ * Command framing and CRC checked against factory DLA-Logic 1.0.3.
++ */
++
++#include <config.h>
++#include <glib.h>
++#include <libsigrok/libsigrok.h>
++#include <math.h>
++#include "libsigrok-internal.h"
++#include "protocol.h"
++
++#define LOG_PREFIX "fnirsi-dla32"
++#define NUM_TRANSFERS 8
++#define TRANSFER_SIZE (1024 * 1024)
++#define TRANSFER_TIMEOUT_MS 1000
++#define USB_POLL_MS 10
++#define WCH_POLL_MS 1
++#define BUFFER_MEMORY_BITS (UINT64_C(4) * 1024 * 1024 * 1024)
++#define DEFAULT_LIMIT_SAMPLES 50000
++#define LOGIC_ONLY_MAX_LIMIT_SAMPLES UINT64_C(100000000)
++#define CONTINUOUS_WINDOW_MSEC 1000
++#define STOP_DRAIN_USEC (3 * G_TIME_SPAN_SECOND)
++#define STOP_DRAIN_BYTES (UINT64_C(64) * 1024 * 1024)
++#define STOP_EMPTY_READS 2
++#define DATA_STALL_USEC (3 * G_TIME_SPAN_SECOND)
++
++#include "transport-wch.h"
++
++struct pwm_setting {
++	uint32_t frequency;
++	unsigned int duty;
++	gboolean enabled;
++};
++
++struct dev_context {
++#ifdef _WIN32
++	struct dla_wch wch;
++	gboolean use_wch;
++	uint8_t *wch_buffer;
++#endif
++	struct sr_sw_limits limits;
++	uint64_t samplerate;
++	int threshold;
++	gboolean stream, continuous, usb3, logic_only;
++	struct pwm_setting pwm[4];
++	struct dla_decoder decoder;
++	uint32_t channel_mask;
++	uint64_t run_limit_samples;
++	struct sr_context *usb_ctx;
++	struct libusb_transfer *transfers[NUM_TRANSFERS];
++	gboolean transfer_submitted[NUM_TRANSFERS];
++	unsigned int submitted_transfers;
++	gboolean acquiring, starting, stopping, stop_sent, cancel_requested;
++	gboolean source_added, header_sent;
++	gboolean data_started, has_trigger;
++	int64_t last_data_us, first_data_timeout_us;
++	size_t pending;
++	uint8_t wire_tail[DLA_CHANNELS];
++	uint8_t *decoded;
++	size_t decoded_size;
++};
++
++static const uint32_t scanopts[] = { SR_CONF_CONN };
++static const uint32_t drvopts[] = {
++	SR_CONF_LOGIC_ANALYZER,
++	SR_CONF_SIGNAL_GENERATOR,
++};
++static const uint32_t logic_drvopts[] = {
++	SR_CONF_LOGIC_ANALYZER,
++};
++static const uint32_t devopts[] = {
++	SR_CONF_LIMIT_SAMPLES | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
++	SR_CONF_LIMIT_MSEC | SR_CONF_GET | SR_CONF_SET,
++	SR_CONF_SAMPLERATE | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
++	SR_CONF_VOLTAGE_THRESHOLD | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
++	SR_CONF_DEVICE_MODE | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
++	SR_CONF_CONTINUOUS | SR_CONF_GET | SR_CONF_SET,
++	SR_CONF_TRIGGER_MATCH | SR_CONF_LIST,
++	SR_CONF_CONN | SR_CONF_GET,
++};
++static const uint32_t logic_devopts[] = {
++	SR_CONF_LIMIT_SAMPLES | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
++	SR_CONF_SAMPLERATE | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
++	SR_CONF_VOLTAGE_THRESHOLD | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
++	SR_CONF_DATA_SOURCE | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
++	SR_CONF_TRIGGER_MATCH | SR_CONF_LIST,
++	SR_CONF_CONN | SR_CONF_GET,
++};
++static const uint32_t pwmopts[] = {
++	SR_CONF_ENABLED | SR_CONF_GET | SR_CONF_SET,
++	SR_CONF_OUTPUT_FREQUENCY | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
++	SR_CONF_DUTY_CYCLE | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
++};
++static const uint64_t samplerates[] = {
++	SR_MHZ(1), SR_MHZ(2), SR_MHZ(4), SR_MHZ(5), SR_MHZ(10),
++	SR_MHZ(20), SR_MHZ(25), SR_MHZ(40), SR_MHZ(50), SR_MHZ(100),
++	SR_MHZ(125), SR_MHZ(200), SR_MHZ(250), SR_MHZ(500), SR_GHZ(1),
++};
++static const double thresholds[][2] = { {0.6, 0.6}, {1.6, 1.6}, {2.5, 2.5} };
++static const char *device_modes[] = { "Buffer", "Stream" };
++static const int32_t trigger_matches[] = {
++	SR_TRIGGER_ZERO, SR_TRIGGER_ONE, SR_TRIGGER_RISING,
++	SR_TRIGGER_FALLING, SR_TRIGGER_EDGE,
++};
++
++static gboolean logic_only_profile(void)
++{
++	return TRUE;
++}
++
++static uint32_t enabled_channel_mask(const struct sr_dev_inst *sdi)
++{
++	const struct sr_channel *channel;
++	GSList *l;
++	uint32_t mask = 0;
++
++	for (l = sdi->channels; l; l = l->next) {
++		channel = l->data;
++		if (channel->type == SR_CHANNEL_LOGIC && channel->enabled &&
++				channel->index < DLA_CHANNELS)
++			mask |= 1U << channel->index;
++	}
++	return mask;
++}
++
++static uint64_t maximum_samplerate(const struct dev_context *devc,
++	uint32_t mask)
++{
++	unsigned int channels = __builtin_popcount(mask);
++
++	if (!channels)
++		return 0;
++	if (!devc->stream)
++		return channels <= 8 ? SR_GHZ(1) : channels <= 16 ? SR_MHZ(500) : SR_MHZ(250);
++	if (!devc->usb3)
++		return 0;
++	if (channels <= 2)
++		return SR_GHZ(1);
++	if (channels <= 4)
++		return SR_MHZ(500);
++	if (channels <= 8)
++		return SR_MHZ(250);
++	return channels <= 16 ? SR_MHZ(125) : SR_MHZ(50);
++}
++
++static int samplerate_index(uint64_t samplerate)
++{
++	unsigned int i;
++
++	for (i = 0; i < ARRAY_SIZE(samplerates); i++)
++		if (samplerates[i] == samplerate)
++			return i;
++	return -1;
++}
++
++static uint64_t maximum_samples(const struct dev_context *devc,
++	uint32_t mask)
++{
++	struct dla_decoder decoder;
++
++	if (devc->stream)
++		return UINT64_MAX;
++	if (dla_decoder_init(&decoder, mask, FALSE) < 0)
++		return 0;
++	return BUFFER_MEMORY_BITS / decoder.wire_channels;
++}
++
++static int pwm_group_index(const struct sr_dev_inst *sdi,
++	const struct sr_channel_group *cg)
++{
++	int index;
++
++	if (!cg)
++		return -1;
++	index = g_slist_index(sdi->channel_groups, cg);
++	return index >= 0 && index < 4 ? index : -1;
++}
++
++#ifdef _WIN32
++static GSList *scan_wch(struct sr_dev_driver *di, GSList *options)
++{
++	struct drv_context *drvc = di->context;
++	libusb_device **list;
++	struct libusb_device_descriptor des;
++	struct dla_wch wch = {0};
++	struct sr_dev_inst *sdi;
++	struct dev_context *devc;
++	struct sr_config *cfg;
++	GSList *devices = NULL, *l;
++	const char *conn = NULL;
++	unsigned int index, ch, matches = 0, bus = 0, address = 0;
++	int speed = LIBUSB_SPEED_UNKNOWN;
++	ssize_t count, i;
++	char name[16], connection[32];
++
++	for (l = options; l; l = l->next) {
++		cfg = l->data;
++		if (cfg->key == SR_CONF_CONN)
++			conn = g_variant_get_string(cfg->data, NULL);
++	}
++	count = libusb_get_device_list(drvc->sr_ctx->libusb_ctx, &list);
++	if (count >= 0) {
++		for (i = 0; i < count; i++) {
++			if (libusb_get_device_descriptor(list[i], &des) ||
++				des.idVendor != 0x1a86 || des.idProduct != 0x5537)
++				continue;
++			matches++;
++			speed = libusb_get_device_speed(list[i]);
++			bus = libusb_get_bus_number(list[i]);
++			address = libusb_get_device_address(list[i]);
++		}
++		libusb_free_device_list(list, 1);
++	}
++	if (!dla_wch_load())
++		return NULL;
++	for (index = 0; index < 16; index++) {
++		g_snprintf(connection, sizeof(connection), "wch:%u", index);
++		if (conn && strcmp(conn, connection))
++			continue;
++		wch.index = index;
++		if (dla_wch_open(&wch) != SR_OK)
++			continue;
++		if (!dla_wch_model32(&wch)) {
++			dla_wch_close(&wch);
++			continue;
++		}
++		dla_wch_close(&wch);
++		sdi = g_malloc0(sizeof(*sdi));
++		sdi->vendor = g_strdup("FNIRSI");
++		sdi->model = g_strdup("DLA-32 Plus (experimental)");
++		sdi->connection_id = g_strdup(connection);
++		sdi->status = SR_ST_INACTIVE;
++		sdi->inst_type = SR_INST_USB;
++		sdi->conn = sr_usb_dev_inst_new(bus, address, NULL);
++		devc = sdi->priv = g_malloc0(sizeof(*devc));
++		devc->use_wch = TRUE;
++		devc->wch.index = index;
++		devc->samplerate = SR_MHZ(50);
++		devc->threshold = 1;
++		devc->logic_only = TRUE;
++		/* With multiple matching WCH nodes, the index-to-libusb association
++		 * needs a path match; never guess which node negotiated SuperSpeed. */
++		devc->usb3 = matches == 1 && speed >= LIBUSB_SPEED_SUPER;
++		sr_sw_limits_init(&devc->limits);
++		devc->limits.limit_samples = DEFAULT_LIMIT_SAMPLES;
++		for (ch = 0; ch < DLA_CHANNELS; ch++) {
++			g_snprintf(name, sizeof(name), "D%u", ch);
++			sr_channel_new(sdi, ch, SR_CHANNEL_LOGIC, TRUE, name);
++		}
++		for (ch = 0; ch < ARRAY_SIZE(devc->pwm); ch++) {
++			g_snprintf(name, sizeof(name), "PWM%u", ch);
++			sr_channel_group_new(sdi, name, NULL);
++			devc->pwm[ch].frequency = 1000;
++			devc->pwm[ch].duty = 50;
++		}
++		sr_info("Confirmed DL32 at %s; negotiated speed %s.", connection,
++			devc->usb3 ? "SuperSpeed" : "USB 2 or unassociated");
++		devices = g_slist_append(devices, sdi);
++	}
++	return devices;
++}
++#endif
++
++static GSList *scan(struct sr_dev_driver *di, GSList *options)
++{
++	struct drv_context *drvc = di->context;
++	struct sr_dev_inst *sdi;
++	struct dev_context *devc;
++	struct libusb_device_descriptor des;
++	libusb_device **list;
++	GSList *devices = NULL, *l;
++	const char *conn = NULL;
++	struct sr_channel_group *cg;
++	struct sr_channel *channel;
++	struct sr_config *cfg;
++	char bus_addr[32], name[8];
++	ssize_t count, i;
++	unsigned int ch;
++
++#ifdef _WIN32
++	devices = scan_wch(di, options);
++	if (devices)
++		return std_scan_complete(di, devices);
++#endif
++	for (l = options; l; l = l->next) {
++		cfg = l->data;
++		if (cfg->key == SR_CONF_CONN)
++			conn = g_variant_get_string(cfg->data, NULL);
++	}
++	/* The WCH VID/PID is shared; require an explicit bus/address. */
++	if (!conn || !*conn)
++		return NULL;
++	count = libusb_get_device_list(drvc->sr_ctx->libusb_ctx, &list);
++	if (count < 0)
++		return NULL;
++	for (i = 0; i < count; i++) {
++		if (libusb_get_device_descriptor(list[i], &des) ||
++			des.idVendor != 0x1a86 || des.idProduct != 0x5537)
++			continue;
++		g_snprintf(bus_addr, sizeof(bus_addr), "%u.%u",
++			libusb_get_bus_number(list[i]), libusb_get_device_address(list[i]));
++		if (strcmp(conn, bus_addr))
++			continue;
++		sdi = g_malloc0(sizeof(*sdi));
++		sdi->vendor = g_strdup("FNIRSI");
++		sdi->model = g_strdup("DLA-32 (experimental)");
++		sdi->connection_id = g_strdup(bus_addr);
++		sdi->status = SR_ST_INACTIVE;
++		sdi->inst_type = SR_INST_USB;
++		sdi->conn = sr_usb_dev_inst_new(libusb_get_bus_number(list[i]),
++			libusb_get_device_address(list[i]), NULL);
++		devc = sdi->priv = g_malloc0(sizeof(*devc));
++		sr_sw_limits_init(&devc->limits);
++		devc->limits.limit_samples = DEFAULT_LIMIT_SAMPLES;
++		devc->samplerate = SR_MHZ(50);
++		devc->threshold = 1;
++		devc->usb3 = libusb_get_device_speed(list[i]) >= LIBUSB_SPEED_SUPER;
++		devc->logic_only = logic_only_profile();
++		for (ch = 0; ch < ARRAY_SIZE(devc->pwm); ch++) {
++			devc->pwm[ch].frequency = SR_KHZ(1);
++			devc->pwm[ch].duty = 50;
++		}
++		for (ch = 0; ch < DLA_CHANNELS; ch++) {
++			g_snprintf(name, sizeof(name), "D%u", ch);
++			sr_channel_new(sdi, ch, SR_CHANNEL_LOGIC, TRUE, name);
++		}
++		if (!devc->logic_only) {
++			for (ch = 0; ch < ARRAY_SIZE(devc->pwm); ch++) {
++				g_snprintf(name, sizeof(name), "PWM%u", ch);
++				cg = sr_channel_group_new(sdi, name, NULL);
++				channel = sr_channel_new(sdi, DLA_CHANNELS + ch,
++					SR_CHANNEL_ANALOG, FALSE, name);
++				cg->channels = g_slist_append(cg->channels, channel);
++			}
++		}
++		devices = g_slist_append(devices, sdi);
++	}
++	libusb_free_device_list(list, 1);
++	return std_scan_complete(di, devices);
++}
++
++static int dev_open(struct sr_dev_inst *sdi)
++{
++#ifdef _WIN32
++	struct dev_context *devc = sdi->priv;
++	if (devc->use_wch) {
++		if (dla_wch_open(&devc->wch) != SR_OK)
++			return SR_ERR_IO;
++		if (!dla_wch_model32(&devc->wch)) {
++			dla_wch_close(&devc->wch);
++			return SR_ERR_NA;
++		}
++		return SR_OK;
++	}
++#endif
++	struct drv_context *drvc = sdi->driver->context;
++	struct sr_usb_dev_inst *usb = sdi->conn;
++	int ret = sr_usb_open(drvc->sr_ctx->libusb_ctx, usb);
++
++	if (ret != SR_OK)
++		return ret;
++	ret = libusb_claim_interface(usb->devhdl, 0);
++	if (ret) {
++		sr_err("Cannot claim interface: %s", libusb_error_name(ret));
++		libusb_close(usb->devhdl);
++		usb->devhdl = NULL;
++		return SR_ERR;
++	}
++	return SR_OK;
++}
++
++static int send_command(const struct sr_dev_inst *sdi, const uint8_t *packet)
++{
++#ifdef _WIN32
++	struct dev_context *devc = sdi->priv;
++	if (devc->use_wch)
++		return dla_wch_write(&devc->wch, packet, DLA_COMMAND_SIZE);
++#endif
++	struct sr_usb_dev_inst *usb = sdi->conn;
++	int count = 0, ret;
++
++	ret = libusb_bulk_transfer(usb->devhdl, 0x02, (uint8_t *)packet,
++		DLA_COMMAND_SIZE, &count, 1000);
++	if (ret || count != DLA_COMMAND_SIZE) {
++		sr_err("Command 0x%02x failed: %s (%d bytes)", packet[9],
++			libusb_error_name(ret), count);
++		return SR_ERR_IO;
++	}
++	return SR_OK;
++}
++
++static int send_pwm_config(const struct sr_dev_inst *sdi, unsigned int index,
++	const struct pwm_setting *setting)
++{
++	struct sr_usb_dev_inst *usb = sdi->conn;
++	uint8_t packet[DLA_COMMAND_SIZE];
++
++	if (!usb->devhdl
++#ifdef _WIN32
++		&& !((struct dev_context *)sdi->priv)->wch.opened
++#endif
++	)
++		return SR_ERR_DEV_CLOSED;
++	if (dla_pwm(packet, index, setting->frequency, setting->duty,
++			setting->enabled) < 0)
++		return SR_ERR_ARG;
++	return send_command(sdi, packet);
++}
++
++static int dev_close(struct sr_dev_inst *sdi)
++{
++	struct dev_context *devc = sdi->priv;
++	struct sr_usb_dev_inst *usb = sdi->conn;
++
++	if (devc->acquiring || devc->source_added || devc->submitted_transfers) {
++		sr_err("Cannot close while asynchronous transfers are active; stop acquisition first.");
++		/* sr_dev_close() changes status before invoking this callback. */
++		sdi->status = SR_ST_ACTIVE;
++		return SR_ERR;
++	}
++#ifdef _WIN32
++	if (devc->use_wch) {
++		dla_wch_close(&devc->wch);
++		return SR_OK;
++	}
++#endif
++	if (usb->devhdl) {
++		libusb_release_interface(usb->devhdl, 0);
++		libusb_close(usb->devhdl);
++		usb->devhdl = NULL;
++	}
++	return SR_OK;
++}
++
++static int config_get(uint32_t key, GVariant **data,
++	const struct sr_dev_inst *sdi, const struct sr_channel_group *cg)
++{
++	struct dev_context *devc = sdi->priv;
++	int pwm_index;
++
++	if (cg) {
++		pwm_index = pwm_group_index(sdi, cg);
++		if (pwm_index < 0)
++			return SR_ERR_ARG;
++		switch (key) {
++		case SR_CONF_ENABLED:
++			*data = g_variant_new_boolean(devc->pwm[pwm_index].enabled);
++			break;
++		case SR_CONF_OUTPUT_FREQUENCY:
++			*data = g_variant_new_double(devc->pwm[pwm_index].frequency);
++			break;
++		case SR_CONF_DUTY_CYCLE:
++			*data = g_variant_new_double(devc->pwm[pwm_index].duty);
++			break;
++		default:
++			return SR_ERR_NA;
++		}
++		return SR_OK;
++	}
++	switch (key) {
++	case SR_CONF_SAMPLERATE:
++		*data = g_variant_new_uint64(devc->samplerate);
++		break;
++	case SR_CONF_LIMIT_SAMPLES:
++	case SR_CONF_LIMIT_MSEC:
++		return sr_sw_limits_config_get(&devc->limits, key, data);
++	case SR_CONF_CONN:
++		*data = g_variant_new_string(sdi->connection_id);
++		break;
++	case SR_CONF_VOLTAGE_THRESHOLD:
++		*data = g_variant_new("(dd)", thresholds[devc->threshold][0],
++			thresholds[devc->threshold][1]);
++		break;
++	case SR_CONF_DEVICE_MODE:
++	case SR_CONF_DATA_SOURCE:
++		*data = g_variant_new_string(device_modes[devc->stream]);
++		break;
++	case SR_CONF_CONTINUOUS:
++		*data = g_variant_new_boolean(devc->continuous);
++		break;
++	default:
++		return SR_ERR_NA;
++	}
++	return SR_OK;
++}
++
++static int config_set(uint32_t key, GVariant *data,
++	const struct sr_dev_inst *sdi, const struct sr_channel_group *cg)
++{
++	struct dev_context *devc = sdi->priv;
++	struct pwm_setting candidate;
++	uint64_t value;
++	double low, high, number;
++	const char *mode;
++	int pwm_index, ret;
++	unsigned int i;
++	gboolean enabled;
++
++	if (devc->acquiring)
++		return SR_ERR;
++	if (cg) {
++		pwm_index = pwm_group_index(sdi, cg);
++		if (pwm_index < 0)
++			return SR_ERR_ARG;
++		candidate = devc->pwm[pwm_index];
++		switch (key) {
++		case SR_CONF_ENABLED:
++			candidate.enabled = g_variant_get_boolean(data);
++			break;
++		case SR_CONF_OUTPUT_FREQUENCY:
++			number = g_variant_get_double(data);
++			if (!isfinite(number) || number < 1 || number > 20000000 ||
++					number != (uint32_t)number)
++				return SR_ERR_ARG;
++			candidate.frequency = number;
++			break;
++		case SR_CONF_DUTY_CYCLE:
++			number = g_variant_get_double(data);
++			if (!isfinite(number) || number < 1 || number > 99 ||
++					number != (unsigned int)number)
++				return SR_ERR_ARG;
++			candidate.duty = number;
++			break;
++		default:
++			return SR_ERR_NA;
++		}
++		ret = send_pwm_config(sdi, pwm_index, &candidate);
++		if (ret == SR_OK)
++			devc->pwm[pwm_index] = candidate;
++		return ret;
++	}
++	switch (key) {
++	case SR_CONF_SAMPLERATE:
++		value = g_variant_get_uint64(data);
++		if (samplerate_index(value) < 0)
++			return SR_ERR_ARG;
++		devc->samplerate = value;
++		return SR_OK;
++	case SR_CONF_LIMIT_SAMPLES:
++		value = g_variant_get_uint64(data);
++		if ((!value && !devc->continuous) ||
++				(!devc->stream && value > BUFFER_MEMORY_BITS))
++			return SR_ERR_ARG;
++		devc->limits.limit_samples = value;
++		if (value) {
++			devc->continuous = FALSE;
++			devc->limits.limit_msec = 0;
++		}
++		return SR_OK;
++	case SR_CONF_LIMIT_MSEC:
++		value = g_variant_get_uint64(data);
++		if ((!value && !devc->continuous) || value > UINT64_MAX / 1000)
++			return SR_ERR_ARG;
++		devc->limits.limit_msec = value * 1000;
++		if (value) {
++			devc->continuous = FALSE;
++			devc->limits.limit_samples = 0;
++		}
++		return SR_OK;
++	case SR_CONF_VOLTAGE_THRESHOLD:
++		g_variant_get(data, "(dd)", &low, &high);
++		for (i = 0; i < ARRAY_SIZE(thresholds); i++) {
++			if (low == thresholds[i][0] && high == thresholds[i][1]) {
++				devc->threshold = i;
++				return SR_OK;
++			}
++		}
++		return SR_ERR_ARG;
++	case SR_CONF_DEVICE_MODE:
++	case SR_CONF_DATA_SOURCE:
++		mode = g_variant_get_string(data, NULL);
++		if (!strcmp(mode, device_modes[0])) {
++			if (devc->continuous)
++				return SR_ERR_ARG;
++			devc->stream = FALSE;
++			return SR_OK;
++		}
++		if (!strcmp(mode, device_modes[1])) {
++			if (!devc->usb3) {
++				sr_err("Experimental Stream mode requires a USB 3 connection.");
++				return SR_ERR_NA;
++			}
++			devc->stream = TRUE;
++			return SR_OK;
++		}
++		return SR_ERR_ARG;
++	case SR_CONF_CONTINUOUS:
++		enabled = g_variant_get_boolean(data);
++		if (enabled && !devc->usb3) {
++			sr_err("Continuous Stream mode requires a USB 3 connection.");
++			return SR_ERR_NA;
++		}
++		devc->continuous = enabled;
++		if (enabled) {
++			devc->stream = TRUE;
++			devc->limits.limit_samples = 0;
++			devc->limits.limit_msec = 0;
++		} else if (!devc->limits.limit_samples && !devc->limits.limit_msec) {
++			devc->limits.limit_samples = DEFAULT_LIMIT_SAMPLES;
++		}
++		return SR_OK;
++	default:
++		return SR_ERR_NA;
++	}
++}
++
++static int config_list(uint32_t key, GVariant **data,
++	const struct sr_dev_inst *sdi, const struct sr_channel_group *cg)
++{
++	const struct dev_context *devc = sdi ? sdi->priv : NULL;
++	uint64_t maximum, maximum_msec;
++	uint32_t mask;
++	unsigned int count;
++	int pwm_index;
++	static const double frequency_range[] = {1, 20000000, 1};
++	static const double duty_range[] = {1, 99, 1};
++
++	if (cg) {
++		if (!sdi)
++			return SR_ERR_ARG;
++		pwm_index = pwm_group_index(sdi, cg);
++		if (pwm_index < 0)
++			return SR_ERR_ARG;
++		switch (key) {
++		case SR_CONF_DEVICE_OPTIONS:
++			*data = std_gvar_array_u32(ARRAY_AND_SIZE(pwmopts));
++			return SR_OK;
++		case SR_CONF_OUTPUT_FREQUENCY:
++			*data = std_gvar_min_max_step_array(frequency_range);
++			return SR_OK;
++		case SR_CONF_DUTY_CYCLE:
++			*data = std_gvar_min_max_step_array(duty_range);
++			return SR_OK;
++		default:
++			return SR_ERR_NA;
++		}
++	}
++	switch (key) {
++	case SR_CONF_SAMPLERATE:
++		if (!sdi)
++			return SR_ERR_ARG;
++		mask = enabled_channel_mask(sdi);
++		maximum = maximum_samplerate(devc, mask);
++		for (count = 0; count < ARRAY_SIZE(samplerates) &&
++				samplerates[count] <= maximum; count++)
++			;
++		if (!count)
++			return SR_ERR_NA;
++		*data = std_gvar_samplerates(samplerates, count);
++		return SR_OK;
++	case SR_CONF_LIMIT_SAMPLES:
++		if (!sdi)
++			return SR_ERR_ARG;
++		maximum = maximum_samples(devc, enabled_channel_mask(sdi));
++		if (devc->logic_only)
++			maximum = MIN(maximum, LOGIC_ONLY_MAX_LIMIT_SAMPLES);
++		*data = std_gvar_tuple_u64(1, maximum);
++		return SR_OK;
++	case SR_CONF_LIMIT_MSEC:
++		if (!sdi || !devc->samplerate)
++			return SR_ERR_ARG;
++		maximum = maximum_samples(devc, enabled_channel_mask(sdi));
++		if (maximum == UINT64_MAX)
++			maximum_msec = UINT64_MAX / 1000;
++		else
++			maximum_msec = maximum / devc->samplerate * 1000 +
++				(maximum % devc->samplerate) * 1000 / devc->samplerate;
++		*data = std_gvar_tuple_u64(1, maximum_msec);
++		return SR_OK;
++	case SR_CONF_VOLTAGE_THRESHOLD:
++		*data = std_gvar_thresholds(ARRAY_AND_SIZE(thresholds));
++		return SR_OK;
++	case SR_CONF_DEVICE_MODE:
++	case SR_CONF_DATA_SOURCE:
++		*data = std_gvar_array_str(device_modes, devc && devc->usb3 ? 2 : 1);
++		return SR_OK;
++	case SR_CONF_TRIGGER_MATCH:
++		*data = std_gvar_array_i32(ARRAY_AND_SIZE(trigger_matches));
++		return SR_OK;
++	default:
++		if ((sdi && devc->logic_only) || (!sdi && logic_only_profile()))
++			return STD_CONFIG_LIST(key, data, sdi, cg, scanopts,
++				logic_drvopts, logic_devopts);
++		return STD_CONFIG_LIST(key, data, sdi, cg, scanopts, drvopts, devopts);
++	}
++}
++
++static void request_stop(struct dev_context *devc)
++{
++	devc->stopping = TRUE;
++}
++
++static void free_prepared_transfers(struct dev_context *devc)
++{
++	unsigned int i;
++
++	for (i = 0; i < ARRAY_SIZE(devc->transfers); i++) {
++		if (!devc->transfers[i])
++			continue;
++		g_free(devc->transfers[i]->buffer);
++		libusb_free_transfer(devc->transfers[i]);
++		devc->transfers[i] = NULL;
++		devc->transfer_submitted[i] = FALSE;
++	}
++	g_free(devc->decoded);
++	devc->decoded = NULL;
++	devc->decoded_size = 0;
++#ifdef _WIN32
++	g_free(devc->wch_buffer);
++	devc->wch_buffer = NULL;
++#endif
++}
++
++static void clear_private(void *priv)
++{
++	if (priv)
++		free_prepared_transfers(priv);
++}
++
++static int dev_clear(const struct sr_dev_driver *driver)
++{
++	struct drv_context *drvc = driver->context;
++	struct sr_dev_inst *sdi;
++	struct dev_context *devc;
++	GSList *l;
++	int ret;
++
++	/* Refuse the whole operation before closing any instance. A frontend
++	 * session can still own these objects while its callbacks are pending. */
++	for (l = drvc->instances; l; l = l->next) {
++		sdi = l->data;
++		if (!sdi)
++			return SR_ERR_BUG;
++		devc = sdi->priv;
++		if (devc && (devc->acquiring || devc->source_added ||
++				devc->submitted_transfers)) {
++			sr_err("Cannot clear DLA-32 instances before acquisition has stopped.");
++			return SR_ERR;
++		}
++	}
++	for (l = drvc->instances; l; l = l->next) {
++		sdi = l->data;
++		/* Close the actual handle even if an earlier caller changed status. */
++		if (sdi->priv && (ret = dev_close(sdi)) != SR_OK)
++			return ret;
++		sdi->status = SR_ST_INACTIVE;
++	}
++	return std_dev_clear_with_callback(driver, clear_private);
++}
++
++static void finish_acquisition(struct sr_dev_inst *sdi)
++{
++	struct dev_context *devc = sdi->priv;
++	int ret;
++
++	if (devc->source_added) {
++#ifdef _WIN32
++		if (devc->use_wch)
++			sr_session_source_remove(sdi->session, -1);
++		else
++#endif
++		usb_source_remove(sdi->session, devc->usb_ctx);
++		devc->source_added = FALSE;
++	}
++	free_prepared_transfers(devc);
++	devc->submitted_transfers = 0;
++	devc->pending = 0;
++	devc->run_limit_samples = 0;
++	devc->acquiring = FALSE;
++	devc->starting = FALSE;
++	devc->stopping = FALSE;
++	devc->stop_sent = FALSE;
++	devc->cancel_requested = FALSE;
++	devc->data_started = FALSE;
++	if (devc->header_sent) {
++		devc->header_sent = FALSE;
++		ret = std_session_send_df_end(sdi);
++		if (ret != SR_OK)
++			sr_err("Failed to deliver acquisition END: %s.", sr_strerror(ret));
++	}
++}
++
++static void retire_transfer(struct libusb_transfer *transfer)
++{
++	struct sr_dev_inst *sdi = transfer->user_data;
++	struct dev_context *devc = sdi->priv;
++	unsigned int i;
++
++	for (i = 0; i < ARRAY_SIZE(devc->transfers); i++) {
++		if (devc->transfers[i] != transfer)
++			continue;
++		devc->transfers[i] = NULL;
++		devc->transfer_submitted[i] = FALSE;
++		break;
++	}
++	g_free(transfer->buffer);
++	libusb_free_transfer(transfer);
++	if (devc->submitted_transfers)
++		devc->submitted_transfers--;
++}
++
++static void cancel_transfers(struct dev_context *devc)
++{
++	unsigned int i;
++	int ret;
++
++	for (i = 0; i < ARRAY_SIZE(devc->transfers); i++) {
++		if (!devc->transfers[i] || !devc->transfer_submitted[i])
++			continue;
++		ret = libusb_cancel_transfer(devc->transfers[i]);
++		if (ret != LIBUSB_SUCCESS && ret != LIBUSB_ERROR_NOT_FOUND)
++			sr_warn("Failed to cancel USB transfer: %s.", libusb_error_name(ret));
++		/* Even NOT_FOUND may mean completion is waiting to be dispatched.
++		 * Only its callback can retire a submitted transfer safely. */
++	}
++}
++
++static void note_data_progress(struct dev_context *devc)
++{
++	devc->data_started = TRUE;
++	devc->last_data_us = g_get_monotonic_time();
++}
++
++static void check_data_progress(struct dev_context *devc)
++{
++	int64_t timeout;
++
++	if (devc->stopping || (!devc->data_started && devc->has_trigger))
++		return;
++	timeout = devc->data_started ? DATA_STALL_USEC : devc->first_data_timeout_us;
++	if (g_get_monotonic_time() - devc->last_data_us <= timeout)
++		return;
++	sr_err("Acquisition stalled after %" PRIu64 " samples (%s).",
++		devc->limits.samples_read,
++		devc->data_started ? "sample transfer" : "waiting for first data");
++	request_stop(devc);
++}
++
++static int resubmit_transfer(struct libusb_transfer *transfer)
++{
++	struct sr_dev_inst *sdi = transfer->user_data;
++	struct dev_context *devc = sdi->priv;
++	int ret;
++
++	ret = libusb_submit_transfer(transfer);
++	if (ret == LIBUSB_SUCCESS)
++		return SR_OK;
++	sr_err("Failed to resubmit USB transfer: %s.", libusb_error_name(ret));
++	request_stop(devc);
++	retire_transfer(transfer);
++	return SR_ERR_IO;
++}
++
++static uint64_t decode_transfer(struct sr_dev_inst *sdi,
++	const uint8_t *input, size_t length)
++{
++	struct dev_context *devc = sdi->priv;
++	struct sr_datafeed_logic logic;
++	struct sr_datafeed_packet packet;
++	size_t produced;
++	uint64_t samples, remaining;
++	int ret;
++
++	if (dla_decode_feed(&devc->decoder, devc->wire_tail, &devc->pending,
++		devc->decoded, devc->decoded_size, input, length, &produced) < 0) {
++		sr_err("Invalid USB frame state or insufficient decode buffer.");
++		request_stop(devc);
++		return 0;
++	}
++	samples = produced / devc->decoder.unitsize;
++
++	remaining = devc->run_limit_samples;
++	if (remaining) {
++		remaining -= MIN(remaining, devc->limits.samples_read);
++		samples = MIN(samples, remaining);
++	}
++	if (!samples)
++		return 0;
++	logic.length = samples * devc->decoder.unitsize;
++	logic.unitsize = devc->decoder.unitsize;
++	logic.data = devc->decoded;
++	packet.type = SR_DF_LOGIC;
++	packet.payload = &logic;
++	ret = sr_session_send(sdi, &packet);
++	if (ret != SR_OK) {
++		sr_err("Failed to deliver acquisition samples: %s.", sr_strerror(ret));
++		request_stop(devc);
++		return 0;
++	}
++	sr_sw_limits_update_samples_read(&devc->limits, samples);
++	return samples;
++}
++
++static void LIBUSB_CALL receive_transfer(struct libusb_transfer *transfer)
++{
++	struct sr_dev_inst *sdi = transfer->user_data;
++	struct dev_context *devc = sdi->priv;
++	gboolean valid_data;
++
++	valid_data = transfer->status == LIBUSB_TRANSFER_COMPLETED ||
++		transfer->status == LIBUSB_TRANSFER_TIMED_OUT;
++	if (devc->stopping) {
++		retire_transfer(transfer);
++		return;
++	}
++	if (!valid_data) {
++		sr_err("USB stream discontinuity: transfer status %d (%d bytes).",
++			transfer->status, transfer->actual_length);
++		request_stop(devc);
++		retire_transfer(transfer);
++		return;
++	}
++	if (transfer->actual_length > 0) {
++		note_data_progress(devc);
++		decode_transfer(sdi, transfer->buffer, transfer->actual_length);
++	}
++	if (devc->stopping ||
++			(devc->run_limit_samples &&
++			devc->limits.samples_read >= devc->run_limit_samples)) {
++		request_stop(devc);
++		retire_transfer(transfer);
++		return;
++	}
++	resubmit_transfer(transfer);
++}
++
++static int read_samples_sync(const struct sr_dev_inst *sdi, uint8_t *buffer,
++	int length, int *count, unsigned int timeout)
++{
++	struct sr_usb_dev_inst *usb = sdi->conn;
++#ifdef _WIN32
++	struct dev_context *devc = sdi->priv;
++	if (devc->use_wch)
++		return dla_wch_read(&devc->wch, 1, buffer, length, count, timeout);
++#endif
++	return libusb_bulk_transfer(usb->devhdl, 0x81, buffer, length, count, timeout);
++}
++
++static void drain_stopped_endpoint(const struct sr_dev_inst *sdi)
++{
++	uint8_t *buffer;
++	uint64_t total = 0;
++	int64_t deadline;
++	unsigned int empty = 0;
++	int count, length, ret;
++
++	buffer = g_try_malloc(TRANSFER_SIZE);
++	if (!buffer) {
++		sr_warn("Cannot allocate the post-stop drain buffer.");
++		return;
++	}
++	deadline = g_get_monotonic_time() + STOP_DRAIN_USEC;
++	while (empty < STOP_EMPTY_READS && total < STOP_DRAIN_BYTES &&
++			g_get_monotonic_time() < deadline) {
++		length = MIN((uint64_t)TRANSFER_SIZE, STOP_DRAIN_BYTES - total);
++		count = 0;
++		ret = read_samples_sync(sdi, buffer, length, &count, 20);
++		if (ret != LIBUSB_SUCCESS && ret != LIBUSB_ERROR_TIMEOUT) {
++			sr_warn("Post-stop drain failed: %s.", libusb_error_name(ret));
++			break;
++		}
++		if (!count) {
++			empty++;
++			continue;
++		}
++		empty = 0;
++		if (count > 0)
++			total += count;
++	}
++	if (empty < STOP_EMPTY_READS)
++		sr_warn("Post-stop endpoint did not become quiet after %" PRIu64
++			" bytes within the drain bound.", total);
++	g_free(buffer);
++}
++
++static void begin_ordered_stop(const struct sr_dev_inst *sdi)
++{
++	struct dev_context *devc = sdi->priv;
++	uint8_t packet[DLA_COMMAND_SIZE];
++
++	if (!devc->stopping || devc->cancel_requested)
++		return;
++	devc->cancel_requested = TRUE;
++	cancel_transfers(devc);
++	dla_stop(packet);
++	devc->stop_sent = TRUE;
++	if (send_command(sdi, packet) != SR_OK)
++		sr_err("Failed to send the acquisition stop command.");
++}
++
++static void rollback_acquisition(struct sr_dev_inst *sdi)
++{
++	struct dev_context *devc = sdi->priv;
++	struct timeval tv;
++	gboolean event_error_logged = FALSE;
++	int ret;
++
++	request_stop(devc);
++	begin_ordered_stop(sdi);
++	/* sr_session_start() tears down its main context on failure. Cancel and
++	 * dispatch all submitted transfers here, before returning that failure.
++	 * Do not iterate the frontend GLib context or free transfers still owned
++	 * by libusb. Cancellation is asynchronous, including NOT_FOUND races. */
++	while (devc->submitted_transfers) {
++		tv.tv_sec = 0;
++		tv.tv_usec = USB_POLL_MS * 1000;
++		ret = libusb_handle_events_timeout(devc->usb_ctx->libusb_ctx, &tv);
++		if (ret == LIBUSB_SUCCESS || ret == LIBUSB_ERROR_INTERRUPTED)
++			continue;
++		if (!event_error_logged) {
++			sr_err("USB rollback is waiting for pending callbacks: %s.",
++				libusb_error_name(ret));
++			event_error_logged = TRUE;
++		}
++		g_usleep(USB_POLL_MS * 1000);
++	}
++	drain_stopped_endpoint(sdi);
++	finish_acquisition(sdi);
++}
++
++static int receive_events(int fd, int revents, void *cb_data)
++{
++	struct sr_dev_inst *sdi = cb_data;
++	struct dev_context *devc = sdi->priv;
++	struct timeval tv = {0, 0};
++	int ret;
++
++	(void)fd;
++	(void)revents;
++	/* A HEADER consumer may dispatch the frontend main context recursively.
++	 * The queue and ARM must be complete before its source can run. */
++	if (devc->starting)
++		return G_SOURCE_CONTINUE;
++	begin_ordered_stop(sdi);
++#ifdef _WIN32
++	if (devc->use_wch) {
++		int count;
++		int64_t deadline = g_get_monotonic_time() + 25000;
++		while (!devc->stopping && g_get_monotonic_time() < deadline) {
++			count = 0;
++			ret = read_samples_sync(sdi, devc->wch_buffer, TRANSFER_SIZE, &count,
++				TRANSFER_TIMEOUT_MS);
++			if (ret != LIBUSB_SUCCESS && ret != LIBUSB_ERROR_TIMEOUT) {
++				sr_err("WCH sample stream failed: %s.", libusb_error_name(ret));
++				request_stop(devc);
++				break;
++			}
++			if (count) {
++				note_data_progress(devc);
++				decode_transfer(sdi, devc->wch_buffer, count);
++			}
++			if (devc->run_limit_samples &&
++				devc->limits.samples_read >= devc->run_limit_samples)
++				request_stop(devc);
++			if (!count)
++				break;
++		}
++		check_data_progress(devc);
++		begin_ordered_stop(sdi);
++		if (devc->stopping) {
++			drain_stopped_endpoint(sdi);
++			finish_acquisition(sdi);
++			return G_SOURCE_REMOVE;
++		}
++		return G_SOURCE_CONTINUE;
++	}
++#endif
++	ret = libusb_handle_events_timeout(devc->usb_ctx->libusb_ctx, &tv);
++	if (ret != LIBUSB_SUCCESS && ret != LIBUSB_ERROR_INTERRUPTED && !devc->stopping) {
++		sr_err("Failed to service USB events: %s.", libusb_error_name(ret));
++		request_stop(devc);
++	}
++	check_data_progress(devc);
++	begin_ordered_stop(sdi);
++	if (devc->stopping && devc->stop_sent && !devc->submitted_transfers) {
++		drain_stopped_endpoint(sdi);
++		finish_acquisition(sdi);
++		return G_SOURCE_REMOVE;
++	}
++	return G_SOURCE_CONTINUE;
++}
++
++static int prepare_trigger(const struct sr_dev_inst *sdi,
++	uint8_t conditions[DLA_CHANNELS])
++{
++	const struct sr_trigger *trigger = sr_session_trigger_get(sdi->session);
++	const struct sr_trigger_stage *stage;
++	const struct sr_trigger_match *match;
++	unsigned int condition;
++
++	memset(conditions, 0, DLA_CHANNELS);
++	if (!trigger)
++		return SR_OK;
++	if (g_slist_length(trigger->stages) != 1) {
++		sr_err("DLA-32 supports one basic trigger stage, not advanced multi-stage triggers.");
++		return SR_ERR_NA;
++	}
++	stage = trigger->stages->data;
++	if (g_slist_length(stage->matches) != 1) {
++		sr_err("DLA-32 supports exactly one channel condition per trigger.");
++		return SR_ERR_NA;
++	}
++	match = stage->matches->data;
++	if (!match->channel || match->channel->type != SR_CHANNEL_LOGIC ||
++			match->channel->index >= DLA_CHANNELS || !match->channel->enabled) {
++		sr_err("DLA-32 trigger must use one enabled logic channel.");
++		return SR_ERR_ARG;
++	}
++	switch (match->match) {
++	case SR_TRIGGER_RISING:
++		condition = 1;
++		break;
++	case SR_TRIGGER_ONE:
++		condition = 2;
++		break;
++	case SR_TRIGGER_FALLING:
++		condition = 3;
++		break;
++	case SR_TRIGGER_ZERO:
++		condition = 4;
++		break;
++	case SR_TRIGGER_EDGE:
++		condition = 5;
++		break;
++	default:
++		return SR_ERR_NA;
++	}
++	conditions[match->channel->index] = condition;
++	return SR_OK;
++}
++
++static uint64_t configured_sample_count(const struct dev_context *devc)
++{
++	uint64_t by_time, milliseconds;
++
++	if (devc->continuous)
++		return 0;
++	by_time = 0;
++	milliseconds = devc->limits.limit_msec / 1000;
++	if (milliseconds) {
++		if (milliseconds > UINT64_MAX / devc->samplerate)
++			by_time = UINT64_MAX;
++		else
++			by_time = devc->samplerate * milliseconds / 1000;
++	}
++	if (!devc->limits.limit_samples)
++		return by_time;
++	if (!by_time)
++		return devc->limits.limit_samples;
++	return MIN(devc->limits.limit_samples, by_time);
++}
++
++static unsigned int duration_index(uint64_t milliseconds)
++{
++	static const uint64_t durations[] = {
++		1, 2, 5, 10, 20, 50, 100, 200, 500,
++		1000, 2000, 5000, 10000, 20000, 50000,
++	};
++	unsigned int i;
++
++	for (i = 0; i + 1 < ARRAY_SIZE(durations); i++)
++		if (milliseconds <= durations[i])
++			break;
++	return i;
++}
++
++static uint64_t samples_to_milliseconds(uint64_t samples,
++	uint64_t samplerate)
++{
++	uint64_t milliseconds, partial, remainder;
++
++	milliseconds = samples / samplerate;
++	if (milliseconds > UINT64_MAX / 1000)
++		return UINT64_MAX;
++	milliseconds *= 1000;
++	remainder = samples % samplerate;
++	partial = remainder * 1000 / samplerate;
++	if (remainder * 1000 % samplerate)
++		partial++;
++	if (milliseconds > UINT64_MAX - partial)
++		return UINT64_MAX;
++	return milliseconds + partial;
++}
++
++static void configure_setup(struct dla_setup_config *setup,
++	const struct dev_context *devc, uint64_t samples, gboolean has_trigger)
++{
++	static const uint16_t threshold_cv[] = {60, 160, 250};
++	static const uint8_t threshold_range[] = {7, 2, 1};
++	uint64_t milliseconds;
++
++	memset(setup, 0, sizeof(*setup));
++	setup->samplerate = devc->samplerate;
++	setup->samplerate_index = samplerate_index(devc->samplerate);
++	setup->threshold = threshold_cv[devc->threshold];
++	setup->threshold_range = threshold_range[devc->threshold];
++	setup->interval_ms = 3;
++	setup->buffer = !devc->stream;
++	setup->mode = devc->continuous ? 3 : 0;
++	if (devc->continuous) {
++		setup->samples = devc->samplerate;
++		milliseconds = CONTINUOUS_WINDOW_MSEC;
++	} else if (devc->limits.limit_msec) {
++		setup->samples = samples;
++		milliseconds = devc->limits.limit_msec / 1000;
++	} else {
++		setup->samples = samples;
++		milliseconds = samples_to_milliseconds(samples, devc->samplerate);
++	}
++	setup->duration_ms = MIN(milliseconds, UINT16_MAX);
++	setup->duration_index = duration_index(milliseconds);
++	setup->trigger_position = has_trigger ? 500 : 0;
++}
++
++static void wait_before_arm(gboolean legacy_path)
++{
++	g_usleep(legacy_path ? 10000 : 100000);
++}
++
++static int prepare_transfers(struct sr_dev_inst *sdi)
++{
++	struct dev_context *devc = sdi->priv;
++	struct sr_usb_dev_inst *usb = sdi->conn;
++	struct libusb_transfer *transfer;
++	uint8_t *buffer;
++	unsigned int i;
++	size_t frames;
++
++	frames = TRANSFER_SIZE / devc->decoder.wire_channels + 1;
++	devc->decoded_size = frames * 8 * devc->decoder.unitsize;
++	devc->decoded = g_try_malloc(devc->decoded_size);
++	if (!devc->decoded)
++		return SR_ERR_MALLOC;
++#ifdef _WIN32
++	if (devc->use_wch) {
++		devc->wch_buffer = g_try_malloc(TRANSFER_SIZE);
++		if (!devc->wch_buffer) {
++			free_prepared_transfers(devc);
++			return SR_ERR_MALLOC;
++		}
++		return SR_OK;
++	}
++#endif
++	for (i = 0; i < ARRAY_SIZE(devc->transfers); i++) {
++		buffer = g_try_malloc(TRANSFER_SIZE);
++		transfer = libusb_alloc_transfer(0);
++		if (!buffer || !transfer) {
++			g_free(buffer);
++			if (transfer)
++				libusb_free_transfer(transfer);
++			free_prepared_transfers(devc);
++			return SR_ERR_MALLOC;
++		}
++		libusb_fill_bulk_transfer(transfer, usb->devhdl, 0x81, buffer,
++			TRANSFER_SIZE, receive_transfer, (void *)sdi, TRANSFER_TIMEOUT_MS);
++		devc->transfers[i] = transfer;
++	}
++	return SR_OK;
++}
++
++static int dev_acquisition_start(const struct sr_dev_inst *sdi)
++{
++	struct dev_context *devc = sdi->priv;
++	struct dla_setup_config setup;
++	uint8_t conditions[DLA_CHANNELS], packet[DLA_COMMAND_SIZE];
++	uint64_t samples, maximum, first_data_msec;
++	uint32_t mask;
++	int count, ret, i;
++	int64_t drain_deadline;
++	gboolean has_trigger, legacy_path;
++
++	if (devc->acquiring || devc->source_added || devc->submitted_transfers)
++		return SR_ERR;
++	mask = enabled_channel_mask(sdi);
++	if (!mask) {
++		sr_err("Enable at least one DLA-32 logic channel.");
++		return SR_ERR_ARG;
++	}
++	if (devc->stream && !devc->usb3) {
++		sr_err("Experimental Stream mode requires a USB 3 connection.");
++		return SR_ERR_NA;
++	}
++	if (devc->samplerate > maximum_samplerate(devc, mask)) {
++		sr_err("%" PRIu64 " Hz exceeds the selected mode/channel limit.",
++			devc->samplerate);
++		return SR_ERR_ARG;
++	}
++	samples = configured_sample_count(devc);
++	maximum = maximum_samples(devc, mask);
++	if ((!samples && !devc->continuous) || samples > maximum) {
++		sr_err("Sample limit exceeds the 4-Gbit Buffer memory for enabled channels.");
++		return SR_ERR_ARG;
++	}
++	has_trigger = sr_session_trigger_get(sdi->session) != NULL;
++	ret = prepare_trigger(sdi, conditions);
++	if (ret != SR_OK)
++		return ret;
++	if (dla_decoder_init(&devc->decoder, mask, devc->stream) < 0)
++		return SR_ERR_ARG;
++	devc->channel_mask = mask;
++	devc->run_limit_samples = devc->continuous ? 0 : samples;
++	legacy_path = !devc->stream && mask == UINT32_MAX &&
++		devc->samplerate == SR_MHZ(50) && !has_trigger &&
++		!devc->limits.limit_msec && samples <= 500000;
++	ret = prepare_transfers((struct sr_dev_inst *)sdi);
++	if (ret != SR_OK)
++		return ret;
++
++	/* Stop and drain stale data before arming the new asynchronous queue. */
++	dla_stop(packet);
++	if (send_command(sdi, packet) != SR_OK) {
++		free_prepared_transfers(devc);
++		return SR_ERR_IO;
++	}
++	drain_deadline = g_get_monotonic_time() + STOP_DRAIN_USEC;
++	for (i = 0; i < 64; i++) {
++		count = 0;
++		ret = read_samples_sync(sdi,
++#ifdef _WIN32
++			devc->use_wch ? devc->wch_buffer :
++#endif
++			devc->transfers[0]->buffer, TRANSFER_SIZE, &count, 20);
++		sr_dbg("Pre-arm drain %d: status %d, %d bytes.", i, ret, count);
++		if ((ret == LIBUSB_SUCCESS || ret == LIBUSB_ERROR_TIMEOUT) && !count)
++			break;
++		if (ret && ret != LIBUSB_ERROR_TIMEOUT) {
++			free_prepared_transfers(devc);
++			return SR_ERR_IO;
++		}
++		if (g_get_monotonic_time() >= drain_deadline) {
++			sr_err("Timed out draining the previous acquisition.");
++			free_prepared_transfers(devc);
++			return SR_ERR_TIMEOUT;
++		}
++	}
++	if (i == 64) {
++		sr_err("Device still streaming after stop; reconnect before retrying.");
++		free_prepared_transfers(devc);
++		return SR_ERR_IO;
++	}
++
++	if (legacy_path)
++		dla_setup(packet, ((const uint16_t[]) { 60, 160, 250 })[devc->threshold],
++			((const uint8_t[]) { 7, 2, 1 })[devc->threshold], samples);
++	else {
++		configure_setup(&setup, devc, samples, has_trigger);
++		dla_setup_configure(packet, &setup);
++	}
++	if (send_command(sdi, packet) != SR_OK) {
++		free_prepared_transfers(devc);
++		return SR_ERR_IO;
++	}
++	wait_before_arm(legacy_path);
++	devc->usb_ctx = ((struct drv_context *)sdi->driver->context)->sr_ctx;
++	devc->pending = devc->submitted_transfers = 0;
++	devc->stopping = devc->stop_sent = devc->cancel_requested = FALSE;
++	devc->header_sent = FALSE;
++	devc->data_started = FALSE;
++	devc->has_trigger = has_trigger;
++	first_data_msec = devc->stream ? 0 :
++		samples_to_milliseconds(samples, devc->samplerate);
++	devc->first_data_timeout_us = first_data_msec >
++		(uint64_t)(G_MAXINT64 - DATA_STALL_USEC) / 1000 ? G_MAXINT64 :
++		(int64_t)first_data_msec * 1000 + DATA_STALL_USEC;
++	devc->acquiring = TRUE;
++	devc->starting = TRUE;
++	devc->last_data_us = g_get_monotonic_time();
++	sr_sw_limits_acquisition_start(&devc->limits);
++#ifdef _WIN32
++	if (devc->use_wch) {
++		ret = sr_session_source_add(sdi->session, -1, 0, WCH_POLL_MS,
++			receive_events, (void *)sdi);
++	} else
++#endif
++		ret = usb_source_add(sdi->session, devc->usb_ctx,
++			USB_POLL_MS, receive_events, (void *)sdi);
++	if (ret != SR_OK) {
++		rollback_acquisition((struct sr_dev_inst *)sdi);
++		return ret;
++	}
++	devc->source_added = TRUE;
++	ret = std_session_send_df_header(sdi);
++	if (ret != SR_OK) {
++		sr_err("Failed to deliver acquisition HEADER: %s.", sr_strerror(ret));
++		rollback_acquisition((struct sr_dev_inst *)sdi);
++		return ret;
++	}
++	devc->header_sent = TRUE;
++	if (devc->stopping) {
++		devc->starting = FALSE;
++		return SR_OK;
++	}
++	for (i = 0; i < NUM_TRANSFERS; i++) {
++#ifdef _WIN32
++		if (devc->use_wch)
++			break;
++#endif
++		ret = libusb_submit_transfer(devc->transfers[i]);
++		if (ret != LIBUSB_SUCCESS) {
++			sr_err("Failed to submit USB transfer: %s.",
++				libusb_error_name(ret));
++			rollback_acquisition((struct sr_dev_inst *)sdi);
++			return SR_ERR_IO;
++		}
++		devc->transfer_submitted[i] = TRUE;
++		devc->submitted_transfers++;
++	}
++	if (legacy_path) {
++		dla_channels(packet);
++		ret = send_command(sdi, packet);
++	} else {
++		ret = dla_channels_config(packet, mask, conditions, 0) < 0 ?
++			SR_ERR_ARG : send_command(sdi, packet);
++	}
++	if (ret != SR_OK) {
++		sr_err("Failed to arm the acquisition: %s.", sr_strerror(ret));
++		rollback_acquisition((struct sr_dev_inst *)sdi);
++		return ret;
++	}
++	devc->last_data_us = g_get_monotonic_time();
++	devc->starting = FALSE;
++	return SR_OK;
++}
++
++static int dev_acquisition_stop(struct sr_dev_inst *sdi)
++{
++	struct dev_context *devc = sdi->priv;
++
++	if (devc->acquiring)
++		request_stop(devc);
++	return SR_OK;
++}
++
++static struct sr_dev_driver fnirsi_dla32_driver_info = {
++	.name = "fnirsi-dla32",
++	.longname = "FNIRSI DLA-32 (experimental)",
++	.api_version = 1,
++	.init = std_init,
++	.cleanup = std_cleanup,
++	.scan = scan,
++	.dev_list = std_dev_list,
++	.dev_clear = dev_clear,
++	.config_get = config_get,
++	.config_set = config_set,
++	.config_list = config_list,
++	.dev_open = dev_open,
++	.dev_close = dev_close,
++	.dev_acquisition_start = dev_acquisition_start,
++	.dev_acquisition_stop = dev_acquisition_stop,
++};
++SR_REGISTER_DEV_DRIVER(fnirsi_dla32_driver_info);
+diff --git a/src/hardware/fnirsi-dla32/protocol.h b/src/hardware/fnirsi-dla32/protocol.h
+new file mode 100644
+index 0000000..7500733
+--- /dev/null
++++ b/src/hardware/fnirsi-dla32/protocol.h
+@@ -0,0 +1,318 @@
++/* SPDX-License-Identifier: GPL-3.0-only */
++/*
++ * Copyright (C) 2026 whatshu <shussm@qq.com>
++ *
++ * FNIRSI DLA-32 experimental driver. Protocol reference:
++ * https://github.com/TechBirdCompany/PXView-DLA32-overlay (GPL-3.0).
++ * Command framing and CRC checked against factory DLA-Logic 1.0.3.
++ */
++
++#ifndef LIBSIGROK_HARDWARE_FNIRSI_DLA32_PROTOCOL_H
++#define LIBSIGROK_HARDWARE_FNIRSI_DLA32_PROTOCOL_H
++
++#include <stdint.h>
++#include <stddef.h>
++#include <string.h>
++#if defined(__SSE2__) && !defined(DLA_DISABLE_SIMD)
++#include <emmintrin.h>
++#endif
++
++#define DLA_COMMAND_SIZE 2048
++#define DLA_CHANNELS 32
++
++/* Factory DLA-Logic 1.0.3: reflected CRC32, initial register 0, final NOT.
++ * Covers the command body only (excludes 0x0a/0x0b and USB padding).
++ */
++static inline uint32_t dla_crc(const uint8_t *data, size_t len)
++{
++	uint32_t crc = 0;
++	unsigned int bit;
++
++	while (len--) {
++		crc ^= *data++;
++		for (bit = 0; bit < 8; bit++)
++			crc = (crc >> 1) ^ ((crc & 1) ? 0xedb88320U : 0);
++	}
++	return ~crc;
++}
++
++static inline void dla_put32(uint8_t *out, uint32_t value)
++{
++	out[0] = value;
++	out[1] = value >> 8;
++	out[2] = value >> 16;
++	out[3] = value >> 24;
++}
++
++static inline void dla_put16(uint8_t *out, uint16_t value)
++{
++	out[0] = value;
++	out[1] = value >> 8;
++}
++
++static inline void dla_put64(uint8_t *out, uint64_t value)
++{
++	dla_put32(out, value);
++	dla_put32(out + 4, value >> 32);
++}
++
++static inline void dla_packet(uint8_t *out, const uint8_t *body, size_t len)
++{
++	memset(out, 0, DLA_COMMAND_SIZE);
++	out[8] = 0x0a;
++	memcpy(out + 9, body, len);
++	out[9 + len] = 0x0b;
++	dla_put32(out + 10 + len, dla_crc(body, len));
++}
++
++/* Factory setup encoder 0x140018a30. These fields reproduce the host protocol;
++ * successful packet construction does not establish a tested hardware mode.
++ */
++struct dla_setup_config {
++	uint32_t samplerate, trigger_position;
++	uint64_t samples;
++	uint16_t threshold, duration_ms, interval_ms;
++	uint8_t samplerate_index, threshold_range, duration_index;
++	uint8_t buffer, mode, rle;
++};
++
++static inline void dla_setup_configure(uint8_t *out,
++	const struct dla_setup_config *cfg)
++{
++	uint8_t body[31] = {0x11, 0x1e, 0x00};
++
++	body[3] = cfg->rle;
++	body[4] = cfg->buffer;
++	body[5] = cfg->mode;
++	dla_put16(body + 6, cfg->interval_ms);
++	dla_put32(body + 8, cfg->samplerate);
++	body[12] = cfg->samplerate_index;
++	dla_put16(body + 13, cfg->threshold);
++	body[15] = cfg->threshold_range;
++	dla_put16(body + 16, cfg->duration_ms);
++	body[18] = cfg->duration_index;
++	dla_put32(body + 19, cfg->trigger_position);
++	dla_put64(body + 23, cfg->samples);
++	dla_packet(out, body, sizeof(body));
++}
++
++/* DLA-32 physical PWM0/PWM1/PWM2/PWM3. The factory UI restricts duty to integer 1..99%.
++ * Disabled electrical state (driven low or high impedance) needs measurement.
++ */
++static inline int dla_pwm(uint8_t *out, unsigned int channel,
++	uint32_t frequency, unsigned int duty, int enabled)
++{
++	uint8_t body[12] = {0x17, 0x0b, 0x00};
++
++	if (channel >= 4 || (enabled &&
++		(!frequency || frequency > 20000000 || !duty || duty > 99)))
++		return -1;
++	body[3] = 0x10 + channel;
++	if (enabled) {
++		dla_put32(body + 4, frequency);
++		dla_put32(body + 8, duty);
++		dla_packet(out, body, sizeof(body));
++	} else {
++		body[1] = 3;
++		dla_packet(out, body, 4);
++	}
++	return 0;
++}
++
++/* Factory channel encoder 0x140014e70: 32-bit physical enable mask, followed
++ * by 32 trigger conditions: none/rising/high/falling/low/either = 0..5.
++ */
++static inline int dla_channels_config(uint8_t *out, uint32_t mask,
++	const uint8_t triggers[DLA_CHANNELS], int instantly)
++{
++	uint8_t body[40] = {0x12, 0x27, 0x00};
++	unsigned int ch;
++
++	if (!mask || (instantly != 0 && instantly != 1))
++		return -1;
++	body[3] = instantly;
++	dla_put32(body + 4, mask);
++	if (triggers) {
++		for (ch = 0; ch < DLA_CHANNELS; ch++) {
++			if (triggers[ch] > 5)
++				return -1;
++			body[8 + ch] = triggers[ch];
++		}
++	}
++	dla_packet(out, body, sizeof(body));
++	return 0;
++}
++
++/* 50 MHz / 1, 2, 5 or 10 ms / buffer mode, captured by the DLA-32 reference.
++ * Threshold is the comparator voltage in centivolts, not the logic rail.
++ */
++static inline void dla_setup(uint8_t *out, uint16_t threshold, uint8_t range,
++	uint32_t requested_samples)
++{
++	uint8_t body[] = {
++		0x11, 0x1e, 0x00, 0x00, 0x01, 0x00, 0x03, 0x00,
++		0x80, 0xf0, 0xfa, 0x02, 0x08, 0xa0, 0x00, 0x02,
++		0x01, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00,
++		0x50, 0xc3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
++	};
++	const uint32_t limits[] = {50000, 100000, 250000, 500000};
++	const uint8_t duration_ms[] = {1, 2, 5, 10};
++	unsigned int profile = 0;
++
++	while (profile < 3 && requested_samples > limits[profile])
++		profile++;
++	body[13] = threshold;
++	body[14] = threshold >> 8;
++	body[15] = range;
++	body[16] = duration_ms[profile];
++	body[18] = profile;
++	dla_put32(body + 23, limits[profile]);
++	dla_packet(out, body, sizeof(body));
++}
++
++static inline void dla_channels(uint8_t *out)
++{
++	uint8_t body[40] = { 0x12, 0x27, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff };
++
++	dla_packet(out, body, sizeof(body));
++}
++
++static inline void dla_stop(uint8_t *out)
++{
++	const uint8_t body[] = { 0x15, 0x02, 0x00 };
++
++	dla_packet(out, body, sizeof(body));
++}
++
++/* The factory rounds active lanes to 1/2/4/8/16/32 in Stream, or 1/8/16/32 in
++ * Buffer. Each active lane is one packed byte (eight LSB-first samples).
++ * Lookup expansion avoids an inner per-sample loop at 1 GS/s.
++ */
++struct dla_decoder {
++	unsigned int wire_channels, channels, unitsize;
++	uint64_t expand[DLA_CHANNELS][256][4];
++};
++
++static inline int dla_decoder_init(struct dla_decoder *decoder,
++	uint32_t mask, int stream)
++{
++	unsigned int ch, lane = 0, value, t, bit, highest = 0;
++
++	if (!mask)
++		return -1;
++	memset(decoder, 0, sizeof(*decoder));
++	for (ch = 0; ch < DLA_CHANNELS; ch++) {
++		if (mask & (1U << ch)) {
++			decoder->channels++;
++			highest = ch;
++		}
++	}
++	decoder->unitsize = highest < 8 ? 1 : highest < 16 ? 2 : 4;
++	decoder->wire_channels = 1;
++	while (decoder->wire_channels < decoder->channels)
++		decoder->wire_channels *= 2;
++	if (!stream && decoder->wire_channels > 1 && decoder->wire_channels < 8)
++		decoder->wire_channels = 8;
++	for (ch = 0; ch < DLA_CHANNELS; ch++) {
++		if (!(mask & (1U << ch)))
++			continue;
++		for (value = 0; value < 256; value++) {
++			for (t = 0; t < 8; t++) {
++				bit = t * decoder->unitsize * 8 + ch;
++				if (value & (1U << t))
++					decoder->expand[lane][value][bit / 64] |=
++						UINT64_C(1) << (bit % 64);
++			}
++		}
++		lane++;
++	}
++	return 0;
++}
++
++static inline void dla_decode_frames(const struct dla_decoder *decoder,
++    uint8_t *out, const uint8_t *in, size_t frames)
++{
++    size_t f;
++    unsigned int lane, word;
++    uint64_t words[4];
++
++#if defined(__SSE2__) && !defined(DLA_DISABLE_SIMD)
++    /* Transpose all 32 lanes into eight samples. SSE2 is baseline on x86-64;
++     * sparse masks and other architectures keep the table decoder below. */
++    if (decoder->channels == 32 && decoder->wire_channels == 32 && decoder->unitsize == 4) {
++        unsigned int t;
++        __m128i low, high;
++        for (f = 0; f < frames; f++) {
++            low = _mm_loadu_si128((const __m128i *)in);
++            high = _mm_loadu_si128((const __m128i *)(in + 16));
++            for (t = 8; t-- > 0;) {
++                dla_put32(out + t * 4, (uint32_t)_mm_movemask_epi8(low) |
++                    ((uint32_t)_mm_movemask_epi8(high) << 16));
++                low = _mm_slli_epi16(low, 1);
++                high = _mm_slli_epi16(high, 1);
++            }
++            in += 32;
++            out += 32;
++        }
++        return;
++    }
++#endif
++
++    for (f = 0; f < frames; f++) {
++        memset(words, 0, sizeof(words));
++        for (lane = 0; lane < decoder->channels; lane++)
++            for (word = 0; word < decoder->unitsize; word++)
++                words[word] |= decoder->expand[lane][in[lane]][word];
++        for (word = 0; word < decoder->unitsize; word++)
++            dla_put64(out + word * 8, words[word]);
++        in += decoder->wire_channels;
++        out += decoder->unitsize * 8;
++    }
++}
++
++/* Preserve incomplete bit-sliced frames across arbitrary USB short reads.
++ * Check destination capacity before changing decoder state. */
++static inline int dla_decode_feed(const struct dla_decoder *decoder,
++    uint8_t tail[DLA_CHANNELS], size_t *pending, uint8_t *out, size_t capacity,
++    const uint8_t *in, size_t length, size_t *produced)
++{
++    size_t frames, needed, bytes;
++
++    *produced = 0;
++    if (!decoder->wire_channels || *pending >= decoder->wire_channels ||
++        length > SIZE_MAX - *pending)
++        return -1;
++    frames = (length + *pending) / decoder->wire_channels;
++    if (frames > SIZE_MAX / (8 * decoder->unitsize))
++        return -1;
++    bytes = frames * 8 * decoder->unitsize;
++    if (bytes > capacity)
++        return -1;
++    if (*pending) {
++        needed = decoder->wire_channels - *pending;
++        if (length < needed) {
++            memcpy(tail + *pending, in, length);
++            *pending += length;
++            return 0;
++        }
++        memcpy(tail + *pending, in, needed);
++        dla_decode_frames(decoder, out, tail, 1);
++        out += 8 * decoder->unitsize;
++        in += needed;
++        length -= needed;
++        *pending = 0;
++    }
++    frames = length / decoder->wire_channels;
++    if (frames) {
++        dla_decode_frames(decoder, out, in, frames);
++        in += frames * decoder->wire_channels;
++        length -= frames * decoder->wire_channels;
++    }
++    if (length) {
++        memcpy(tail, in, length);
++        *pending = length;
++    }
++    *produced = bytes;
++    return 0;
++}
++#endif
+diff --git a/src/hardware/fnirsi-dla32/transport-wch.h b/src/hardware/fnirsi-dla32/transport-wch.h
+new file mode 100644
+index 0000000..7bbe743
+--- /dev/null
++++ b/src/hardware/fnirsi-dla32/transport-wch.h
+@@ -0,0 +1,163 @@
++/* SPDX-License-Identifier: GPL-3.0-only */
++/* Native Windows transport, informed by TechBirdCompany's GPL-3.0 overlay.
++ * WCH function signatures correspond to the installed CH375DLL64 runtime.
++ * The vendor DLL stays in its original installation; no driver replacement.
++ */
++#ifndef LIBSIGROK_FNIRSI_DLA32_WCH_H
++#define LIBSIGROK_FNIRSI_DLA32_WCH_H
++#ifdef _WIN32
++#include <windows.h>
++
++struct dla_wch {
++    ULONG index;
++    gboolean opened;
++};
++
++static struct {
++    HMODULE module;
++    HANDLE (WINAPI *open)(ULONG);
++    VOID (WINAPI *close)(ULONG);
++    ULONG (WINAPI *usb_id)(ULONG);
++    BOOL (WINAPI *write)(ULONG, PVOID, PULONG);
++    BOOL (WINAPI *read)(ULONG, ULONG, PVOID, PULONG);
++    BOOL (WINAPI *timeout)(ULONG, ULONG, ULONG);
++    BOOL (WINAPI *timeout_ex)(ULONG, ULONG, ULONG, ULONG, ULONG);
++} wch_api;
++
++static gboolean dla_wch_load(void)
++{
++    const char *override = g_getenv("FNIRSI_WCH_DLL");
++    const char *program_files = g_getenv("ProgramW6432");
++    char *path;
++    gunichar2 *wide_path;
++
++    if (wch_api.module)
++        return TRUE;
++    if (!program_files)
++        program_files = "C:\\Program Files";
++    path = override ? g_strdup(override) : g_build_filename(program_files,
++        "FNIRSI", "DLA Logic", "CH375DLL64.dll", NULL);
++    if (!g_path_is_absolute(path)) {
++        sr_err("FNIRSI_WCH_DLL must name an absolute DLL path.");
++        g_free(path);
++        return FALSE;
++    }
++    wide_path = g_utf8_to_utf16(path, -1, NULL, NULL, NULL);
++    if (wide_path)
++        wch_api.module = LoadLibraryExW((LPCWSTR)wide_path, NULL,
++            LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
++    g_free(wide_path);
++    g_free(path);
++    if (!wch_api.module)
++        return FALSE;
++#define WCH_LOAD(field, symbol) do { \
++    FARPROC address = GetProcAddress(wch_api.module, symbol); \
++    G_STATIC_ASSERT(sizeof(wch_api.field) == sizeof(address)); \
++    memcpy(&wch_api.field, &address, sizeof(address)); \
++} while (0)
++    WCH_LOAD(open, "CH375OpenDevice");
++    WCH_LOAD(close, "CH375CloseDevice");
++    WCH_LOAD(usb_id, "CH375GetUsbID");
++    WCH_LOAD(write, "CH375WriteData");
++    WCH_LOAD(read, "CH375ReadEndP");
++    WCH_LOAD(timeout, "CH375SetTimeout");
++    WCH_LOAD(timeout_ex, "CH375SetTimeoutEx");
++#undef WCH_LOAD
++    if (!wch_api.open || !wch_api.close || !wch_api.usb_id ||
++        !wch_api.write || !wch_api.read || !wch_api.timeout) {
++        FreeLibrary(wch_api.module);
++        memset(&wch_api, 0, sizeof(wch_api));
++        sr_err("WCH runtime lacks required functions.");
++        return FALSE;
++    }
++    return TRUE;
++}
++
++static int dla_wch_open(struct dla_wch *wch)
++{
++    HANDLE handle;
++
++    if (!dla_wch_load())
++        return SR_ERR_NA;
++    handle = wch_api.open(wch->index);
++    if (!handle || handle == INVALID_HANDLE_VALUE)
++        return SR_ERR_IO;
++    wch->opened = TRUE;
++    if (wch_api.usb_id(wch->index) != 0x55371a86 ||
++        !wch_api.timeout(wch->index, 1000, 20)) {
++        wch_api.close(wch->index);
++        wch->opened = FALSE;
++        return SR_ERR_IO;
++    }
++    return SR_OK;
++}
++
++static void dla_wch_close(struct dla_wch *wch)
++{
++    if (wch->opened)
++        wch_api.close(wch->index);
++    wch->opened = FALSE;
++}
++
++static int dla_wch_write(struct dla_wch *wch, const uint8_t *data, ULONG length)
++{
++    ULONG actual = length;
++
++    if (!wch->opened)
++        return SR_ERR_DEV_CLOSED;
++    if (!wch_api.write(wch->index, (PVOID)data, &actual) || actual != length) {
++        sr_err("WCH write failed (%lu/%lu bytes, Windows error %lu).",
++            actual, length, GetLastError());
++        return SR_ERR_IO;
++    }
++    return SR_OK;
++}
++
++static int dla_wch_read(struct dla_wch *wch, ULONG pipe, uint8_t *data,
++    ULONG length, int *actual, unsigned int timeout_ms)
++{
++    ULONG received = length;
++    DWORD error;
++    BOOL ok;
++
++    *actual = 0;
++    if (!wch->opened)
++        return LIBUSB_ERROR_NO_DEVICE;
++    if (!(wch_api.timeout_ex ?
++        wch_api.timeout_ex(wch->index, 1000, timeout_ms, 1000, timeout_ms) :
++        wch_api.timeout(wch->index, 1000, timeout_ms)))
++        return LIBUSB_ERROR_IO;
++    SetLastError(ERROR_SUCCESS);
++    ok = wch_api.read(wch->index, pipe, data, &received);
++    error = GetLastError();
++    if (ok) {
++        if (received > length)
++            return LIBUSB_ERROR_OVERFLOW;
++        *actual = received;
++        return LIBUSB_SUCCESS;
++    }
++    /* The DLL reports a partial timeout by updating the length. Never use an
++     * unchanged requested length after failure: that could expose stale bytes. */
++    if (received < length)
++        *actual = received;
++    if (error == ERROR_SEM_TIMEOUT || error == ERROR_TIMEOUT || error == WAIT_TIMEOUT)
++        return LIBUSB_ERROR_TIMEOUT;
++    sr_err("WCH pipe %lu read failed (Windows error %lu, %d bytes).",
++        pipe, error, *actual);
++    return LIBUSB_ERROR_IO;
++}
++
++static gboolean dla_wch_model32(struct dla_wch *wch)
++{
++    uint8_t command[512] = {0x0a, 0x10}, reply[512];
++    int actual, ret;
++
++    if (dla_wch_write(wch, command, sizeof(command)) != SR_OK)
++        return FALSE;
++    ret = dla_wch_read(wch, 2, reply, sizeof(reply), &actual, 500);
++    return ret == LIBUSB_SUCCESS && actual >= 19 && reply[0] == 0x0a &&
++        reply[1] == 0x02 && reply[2] == 0x0d &&
++        !memcmp(reply + 13, "DL32", 4) && reply[18] == 0x0b;
++}
++#endif
++#endif

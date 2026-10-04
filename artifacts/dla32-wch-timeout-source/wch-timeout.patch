@@ -1,0 +1,49 @@
+--- a/src/hardware/fnirsi-dla32/transport-wch.h
++++ b/src/hardware/fnirsi-dla32/transport-wch.h
+@@ -99,12 +99,35 @@
+     wch->opened = FALSE;
+ }
+ 
++/* ReadEndP and WriteData both use the installed SDK/kernel's first timeout
++ * field. Set every field before each operation; a short drain must not leave
++ * the next command with its short read deadline. No SDK upload is enabled.
++ * Keep setter and I/O adjacent on success: log callbacks cannot intervene. */
++static gboolean dla_wch_operation_timeout(struct dla_wch *wch,
++    unsigned int timeout_ms, const char *operation)
++{
++    BOOL ok;
++    DWORD error;
++
++    SetLastError(ERROR_SUCCESS);
++    ok = wch_api.timeout_ex ?
++        wch_api.timeout_ex(wch->index, timeout_ms, timeout_ms, timeout_ms, timeout_ms) :
++        wch_api.timeout(wch->index, timeout_ms, timeout_ms);
++    error = GetLastError();
++    if (!ok)
++        sr_err("WCH %s timeout configuration failed (%u ms, Windows error %lu).",
++            operation, timeout_ms, error);
++    return ok != FALSE;
++}
++
+ static int dla_wch_write(struct dla_wch *wch, const uint8_t *data, ULONG length)
+ {
+     ULONG actual = length;
+ 
+     if (!wch->opened)
+         return SR_ERR_DEV_CLOSED;
++    if (!dla_wch_operation_timeout(wch, 1000, "write"))
++        return SR_ERR_IO;
+     if (!wch_api.write(wch->index, (PVOID)data, &actual) || actual != length) {
+         sr_err("WCH write failed (%lu/%lu bytes, Windows error %lu).",
+             actual, length, GetLastError());
+@@ -123,9 +146,7 @@
+     *actual = 0;
+     if (!wch->opened)
+         return LIBUSB_ERROR_NO_DEVICE;
+-    if (!(wch_api.timeout_ex ?
+-        wch_api.timeout_ex(wch->index, 1000, timeout_ms, 1000, timeout_ms) :
+-        wch_api.timeout(wch->index, 1000, timeout_ms)))
++    if (!dla_wch_operation_timeout(wch, timeout_ms, "read"))
+         return LIBUSB_ERROR_IO;
+     SetLastError(ERROR_SUCCESS);
+     ok = wch_api.read(wch->index, pipe, data, &received);

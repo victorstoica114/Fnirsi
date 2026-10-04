@@ -1,0 +1,32 @@
+{
+  "variant": "wch-timeout",
+  "hardware_accessed": false,
+  "native_bash_exit_code": 0,
+  "make_check_checks": 92,
+  "make_check_failures": 0,
+  "mock_checks": 443,
+  "mock_failures": 0,
+  "timeout_mock_checks": 47,
+  "timeout_mock_failures": 0,
+  "harness_selftest_passed": true,
+  "package_directory": "D:\\Documente\\analizor logic\\artifacts\\dla32-wch-timeout",
+  "dll_sha256": "438f234d45f1a5f16362ec853db567c0ac46b0e045df047256d8fe5889a1ceaf",
+  "package_manifest_sha256": "6f7ae3a6d718d02aff57e6a05757dd826dfdad0a01832dd0b51d4d265c1802a3",
+  "source_files_verified": 489,
+  "package_files_verified": 25,
+  "changed_files": [
+    "src/hardware/fnirsi-dla32/transport-wch.h"
+  ],
+  "source_patch_sha256": "d5a7ea293732bce50ec8e139d9788802dfcb12c4668496485323524a005e742c",
+  "protected_dll_sha256": {
+    "artifacts/pulseview-dla32-reliability/libsigrok-4.dll": "76bfe1e98b37a5af01dcd39f453125978a5bfa86d622d49b5098ba4b226b7049",
+    "artifacts/pulseview-la1010-reference/libsigrok-4.dll": "90e3efc04c2f799a30ec45258954fb3f62e1fcbc79bcbedc36d2e61c9364bdd7",
+    "artifacts/pulseview-dla32-wiretrace/libsigrok-4.dll": "d299cc594f24f9e737db21b95f70f78791fe5ecf6bd81af724ab48854089d869",
+    "artifacts/dla32-drain-ab-baseline/libsigrok-4.dll": "b3d3b7082367db88ada7a1d285accf2877ffc2b9f6f17fd664222106f27c1662",
+    "artifacts/dla32-drain-ab-two-empty/libsigrok-4.dll": "67e5a15825fb3aae5ad310f3c482b29899bcaf3db423ef202adb9188835d8b88",
+    "artifacts/dla32-wch-upload/libsigrok-4.dll": "0f4211fd8238778df86854cea320f33ecabe541674fc5f3dd781a93542106b9c",
+    "artifacts/dla32-wch-upload-v2/libsigrok-4.dll": "19699780d13e91fd7bae715fd10a65827780a616fe0560a8da13160da01d29ed"
+  },
+  "timeout_policy_changed_intentionally": true,
+  "alignment_fix_established": false
+}

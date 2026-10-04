@@ -1,0 +1,34 @@
+{
+  "variant": "wch-upload-v2",
+  "source_directory": "D:\\Documente\\analizor logic\\artifacts\\dla32-wch-upload-v2-source\\libsigrok",
+  "changed_files_vs_v1": [
+    "src/hardware/fnirsi-dla32/transport-wch.h"
+  ],
+  "source_sha256": {
+    "src/hardware/fnirsi-dla32/api.c": "55524facd2b286669b1cb5fd74e29d11c0f38c8c02e52021c1a373dc6bd40a59",
+    "src/hardware/fnirsi-dla32/transport-wch.h": "11f61c2bc917fbfb6021a4cbfd14453b01c52591bb1c6f0f374aa83b81326535"
+  },
+  "source_patch_sha256": "ac34d4a82400b344e80167efd2f5025c9676f8f422f2c7a58071013117c18603",
+  "prearm_empty_reads": 1,
+  "upload_diagnostic_enabled": true,
+  "read_size_bytes": 1048576,
+  "sample_read_timeout_ms": 1000,
+  "drain_read_timeout_ms": 20,
+  "upload_pipe": 1,
+  "upload_length_bytes": 1048576,
+  "start_order": "STOP -> disable -> baseline drain -> SETUP/source/HEADER -> enable -> enabled Clear -> ARM",
+  "retire_order": "STOP -> successful disable -> post-stop drain; no disabled Clear",
+  "upload_clear_erased_byte_count": null,
+  "alignment_fix_established": false,
+  "api_unchanged_vs_v1": true,
+  "protocol_unchanged": true,
+  "hardware_accessed": false,
+  "protected_dll_sha256": {
+    "artifacts/pulseview-dla32-reliability/libsigrok-4.dll": "76bfe1e98b37a5af01dcd39f453125978a5bfa86d622d49b5098ba4b226b7049",
+    "artifacts/pulseview-la1010-reference/libsigrok-4.dll": "90e3efc04c2f799a30ec45258954fb3f62e1fcbc79bcbedc36d2e61c9364bdd7",
+    "artifacts/pulseview-dla32-wiretrace/libsigrok-4.dll": "d299cc594f24f9e737db21b95f70f78791fe5ecf6bd81af724ab48854089d869",
+    "artifacts/dla32-drain-ab-baseline/libsigrok-4.dll": "b3d3b7082367db88ada7a1d285accf2877ffc2b9f6f17fd664222106f27c1662",
+    "artifacts/dla32-drain-ab-two-empty/libsigrok-4.dll": "67e5a15825fb3aae5ad310f3c482b29899bcaf3db423ef202adb9188835d8b88",
+    "artifacts/dla32-wch-upload/libsigrok-4.dll": "0f4211fd8238778df86854cea320f33ecabe541674fc5f3dd781a93542106b9c"
+  }
+}

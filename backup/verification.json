@@ -1,0 +1,22 @@
+{
+  "public_source_files": 5897,
+  "public_source_bytes": 110483757,
+  "encrypted_note_files": 9,
+  "encrypted_note_bytes": 65664,
+  "notes_restored_sha256_matches": 9,
+  "wrong_key_rejected": true,
+  "source_copy_sha256_matches": 5897,
+  "hardware_accessed": false,
+  "excluded": [
+    "captures",
+    "logs",
+    "downloads",
+    "FNIRSI evidence packages",
+    "mail correspondence",
+    "browser snapshots",
+    "compiled binaries",
+    "build caches",
+    "nested Git metadata"
+  ],
+  "key_uploaded": false
+}

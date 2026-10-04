@@ -1,0 +1,50 @@
+{
+  "scope": "hardware-free build, real transport mocked API tests, immutable package/source integrity",
+  "hardware_accessed": false,
+  "alignment_fix_established": false,
+  "native_bash_exit_code": 0,
+  "make_check_checks": 92,
+  "make_check_failures": 0,
+  "mock_checks": 501,
+  "mock_failures": 0,
+  "compile_guards_passed": 3,
+  "harness_selftest_passed": true,
+  "package_directory": "D:\\Documente\\analizor logic\\artifacts\\dla32-wch-upload-v2",
+  "package_manifest_sha256": "1f2e53f2e9dca1b73680db3eff19fcf0ab85613a44708e8a805477d9e71d5ca4",
+  "dll_sha256": "19699780d13e91fd7bae715fd10a65827780a616fe0560a8da13160da01d29ed",
+  "package_files_verified": 24,
+  "source_files_verified": 489,
+  "changed_files": [
+    "src/hardware/fnirsi-dla32/transport-wch.h"
+  ],
+  "unchanged_code_regions_sha256": {
+    "decode_transfer": "9ff2430911b23de2b8cd8b766830b05d190a1495642f10421ebfb30d4ba41618",
+    "read_samples_sync": "3be2eb335bef4d847c780d96821709c86e716130af6cd5eb0377a49a4ebadb8e",
+    "receive_events": "e0ab33018cdb587933042d2d779afafa57925a9a82f777dded422a6fb2400d3f",
+    "prepare_trigger": "a6cae35e9b6eba479171d96544684ea0dfcc91ee8548a01f0fa5c7e4898a6e4a"
+  },
+  "protocol_sha256": "8d09566555230a0d66ced4abb2d5d9230dae93c66f953ed0acc2e1fc81bc4cd3",
+  "source_patch_sha256": "ac34d4a82400b344e80167efd2f5025c9676f8f422f2c7a58071013117c18603",
+  "protected_dll_sha256": {
+    "artifacts/pulseview-dla32-reliability/libsigrok-4.dll": "76bfe1e98b37a5af01dcd39f453125978a5bfa86d622d49b5098ba4b226b7049",
+    "artifacts/pulseview-la1010-reference/libsigrok-4.dll": "90e3efc04c2f799a30ec45258954fb3f62e1fcbc79bcbedc36d2e61c9364bdd7",
+    "artifacts/pulseview-dla32-wiretrace/libsigrok-4.dll": "d299cc594f24f9e737db21b95f70f78791fe5ecf6bd81af724ab48854089d869",
+    "artifacts/dla32-drain-ab-baseline/libsigrok-4.dll": "b3d3b7082367db88ada7a1d285accf2877ffc2b9f6f17fd664222106f27c1662",
+    "artifacts/dla32-drain-ab-two-empty/libsigrok-4.dll": "67e5a15825fb3aae5ad310f3c482b29899bcaf3db423ef202adb9188835d8b88",
+    "artifacts/dla32-wch-upload/libsigrok-4.dll": "0f4211fd8238778df86854cea320f33ecabe541674fc5f3dd781a93542106b9c"
+  },
+  "upload_clear_erased_byte_count": null,
+  "upload_retirement_erased_byte_count": null,
+  "tools_sha256": {
+    "prepare_dla32_wch_upload_v2.py": "62e4681a024e02be9c5f8cc29f5fa1aed22b38108855bf52d58f9c8661af324c",
+    "prepare_dla32_wch_upload_v2_tests.py": "b2054a5f8864325b2c035d459df8f387ce93cf4c770d37ffe7e2012d209ccda0",
+    "dla32_wch_upload_v2_cases.c.inc": "19908f4ba3de1d543097755287cddb82193858060e9e9af2a1fe945a1e055654",
+    "test_dla32_wch_upload_v2_mock.sh": "44c2fb7f31091a9e3dff28371367e3d5c6b3729959945d96167a226d163ba9ee",
+    "test_dla32_wch_upload_v2_compile_guards.sh": "d4311e93e607d87c9752c7a27dfd33f99dc700b3f9b62374605fb67169198708",
+    "build_dla32_wch_upload_v2.sh": "39b32b3ed5c0f09e9799d418b6376c9b371686843bc53b3a2b52ac7f3580bf5b",
+    "run_dla32_wch_upload_v2_build_with_status.sh": "cc58b92e63feeadbcbcfead0dd336eaa803824542ebf10e477202775d7b41150",
+    "prepare_dla32_wch_upload_v2_packaging.py": "0e7159df0c84e2e5952f795f74401407d78157c1c526cd9171cdb11f546de425",
+    "package_dla32_wch_upload_v2.py": "54b8a101549f0b4b481af957c145840b79332e537e303b9075c34293bbd55b16",
+    "verify_dla32_wch_upload_v2_package.py": "3f539a1f906523f88f339c3bc7743ff25c6bae3eea2be217950b57dc182b856b"
+  }
+}

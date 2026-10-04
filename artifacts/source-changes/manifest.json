@@ -1,0 +1,16 @@
+{
+  "libsigrok": {
+    "base_commit": "b5521a9d0397cb04e661047ff92fd91eefde4fed",
+    "untracked_included": [
+      "src/hardware/fnirsi-dla32/api.c",
+      "src/hardware/fnirsi-dla32/protocol.h",
+      "src/hardware/fnirsi-dla32/transport-wch.h"
+    ],
+    "patch_bytes": 68087
+  },
+  "pulseview": {
+    "base_commit": "af02198741b4e57c9f9b796bd5e6c0f2ae9f2f2b",
+    "untracked_included": [],
+    "patch_bytes": 4349
+  }
+}

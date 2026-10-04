@@ -1,0 +1,23 @@
+{
+  "packages": [
+    {
+      "variant": "baseline",
+      "directory": "D:\\Documente\\analizor logic\\artifacts\\dla32-drain-ab-baseline",
+      "prearm_empty_reads": 1,
+      "dll_sha256": "b3d3b7082367db88ada7a1d285accf2877ffc2b9f6f17fd664222106f27c1662",
+      "files": 23
+    },
+    {
+      "variant": "two-empty",
+      "directory": "D:\\Documente\\analizor logic\\artifacts\\dla32-drain-ab-two-empty",
+      "prearm_empty_reads": 2,
+      "dll_sha256": "67e5a15825fb3aae5ad310f3c482b29899bcaf3db423ef202adb9188835d8b88",
+      "files": 23
+    }
+  ],
+  "existing_runtime_dll_sha256": {
+    "DLA32": "76bfe1e98b37a5af01dcd39f453125978a5bfa86d622d49b5098ba4b226b7049",
+    "Kingst": "90e3efc04c2f799a30ec45258954fb3f62e1fcbc79bcbedc36d2e61c9364bdd7",
+    "diagnostic": "d299cc594f24f9e737db21b95f70f78791fe5ecf6bd81af724ab48854089d869"
+  }
+}

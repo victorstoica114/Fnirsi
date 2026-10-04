@@ -1,0 +1,35 @@
+{
+  "recorded_at": "2026-10-03T08:43:34.893809+00:00",
+  "sources": [
+    {
+      "path": "src/libsigrok",
+      "remote": "https://github.com/sigrokproject/libsigrok.git",
+      "base_commit": "b5521a9d0397cb04e661047ff92fd91eefde4fed"
+    },
+    {
+      "path": "src/libsigrokdecode",
+      "remote": "https://github.com/sigrokproject/libsigrokdecode.git",
+      "base_commit": "71f451443029322d57376214c330b518efd84f88"
+    },
+    {
+      "path": "src/pulseview",
+      "remote": "https://github.com/sigrokproject/pulseview.git",
+      "base_commit": "af02198741b4e57c9f9b796bd5e6c0f2ae9f2f2b"
+    },
+    {
+      "path": "src/reference-dla32",
+      "remote": "https://github.com/TechBirdCompany/PXView-DLA32-overlay.git",
+      "base_commit": "b6fc4e7c075b4553248c78ed5b3c55bcee461410"
+    },
+    {
+      "path": "src/reference-megabyte",
+      "remote": "https://github.com/megabyte1024/libsigrok.git",
+      "base_commit": "59afc9e386d867235e08a14268be6382fef9a5f2"
+    },
+    {
+      "path": "src/sigrok-cli",
+      "remote": "https://github.com/sigrokproject/sigrok-cli.git",
+      "base_commit": "f44dd91347e7ac797cefc23162b9fcf0b7329f1f"
+    }
+  ]
+}
