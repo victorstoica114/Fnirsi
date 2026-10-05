@@ -1,45 +1,45 @@
-# Sursă PWM de test — Freenove ESP32 WROVER
+# Test PWM source — Freenove ESP32 WROVER
 
-Țintă identificată pe 2026-10-03: ESP32-D0WD-V3, revizia v3.1, flash 4 MB, USB-SERIAL CH340 pe COM33. Camera și cardul SD lipsesc, conform utilizatorului.
+Target identified on 2026-10-03: ESP32-D0WD-V3, revision v3.1, 4 MB flash, USB-SERIAL CH340 on COM33. The camera and SD card are absent, according to the user.
 
-Prima schemă necesită două fire:
+The initial wiring requires two wires:
 
 | ESP32 / breakout | FNIRSI DLA-32 |
 |---|---|
-| GND | GND de la conectorul de intrări |
-| GPIO32 / IO32, terminalul S corespunzător | D0 / canalul 0 |
+| GND | GND on the input connector |
+| GPIO32 / IO32, corresponding S terminal | D0 / channel 0 |
 
-Terminalul S se alege urmărind pinul **IO32 de pe placa ESP32**, nu presupunând că numărul poziției breakout este numărul GPIO. Alimentăm ESP32 prin USB. Nu conectăm rândurile 5V/VCC/3V3 la D0. Desprindem legătura anterioară de la PWM0 al DLA către această intrare înainte de a lega ieșirea ESP32.
+Select the S terminal by tracing **IO32 on the ESP32 board**, rather than assuming that the breakout position number is the GPIO number. Power the ESP32 through USB. Do not connect the 5V/VCC/3V3 rows to D0. Disconnect the previous link from the DLA's PWM0 to this input before connecting the ESP32 output.
 
-Programul produce PWM hardware la 100 kHz și 50% pe GPIO32, însă pornește cu ieșirea LOW/oprită. Pe serial, la 115200 baud:
+The program produces hardware PWM at 100 kHz and 50% duty on GPIO32, but starts with the output LOW/off. Serial commands at 115200 baud:
 
-- `STATUS` + newline: configurație și starea ieșirii.
-- `ON` + newline: activează PWM.
-- `OFF` + newline: oprește PWM și menține LOW.
+- `STATUS` + newline: report configuration and output state.
+- `ON` + newline: enable PWM.
+- `OFF` + newline: stop PWM and hold LOW.
 
-În PulseView: Buffer, 50 MHz, 50k samples, prag 1,6 V; D0 activ. La 100 kHz, perioada nominală este 10 µs, aproximativ 500 de eșantioane la 50 MHz. Ceasurile ESP32 și DLA sunt independente, deci verificatorul trebuie să admită cuantizarea/driftul real, nu să impună fiecare perioadă exact 500 ca la generatorul intern.
+In PulseView: Buffer, 50 MHz, 50k samples, 1.6 V threshold; D0 enabled. At 100 kHz, the nominal period is 10 µs, approximately 500 samples at 50 MHz. The ESP32 and DLA clocks are independent, so the checker must allow actual quantization/drift rather than require every period to be exactly 500 samples as with the internal generator.
 
-Compilare, cu interpretorul Python 3.11 al PlatformIO existent și platforma locală:
+Build using the existing PlatformIO Python 3.11 interpreter and local platform:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/build_esp32_signal_source.ps1
 ```
 
-Fișierul `platformio.ini` folosește platforma locală inspectată, versiunea 55.03.38, și Arduino 3.3.8. Scriptul verifică versiunea Python și activează `PLATFORMIO_OFFLINE=1` pentru a evita actualizarea automată a dependențelor/Core în timpul compilării. Nu folosim comanda `platformio` din PATH: pe acest PC ea pornește Python 3.13, incompatibil cu mediul comun Python 3.11 al platformei. Pentru reproducere pe alt calculator trebuie instalate/fixate aceleași versiuni și adaptate căile locale.
+The `platformio.ini` file uses the inspected local platform, version 55.03.38, and Arduino 3.3.8. The script checks the Python version and enables `PLATFORMIO_OFFLINE=1` to prevent automatic dependency/Core updates during the build. Do not use the `platformio` command from PATH: on this PC it starts Python 3.13, which is incompatible with the platform's shared Python 3.11 environment. To reproduce the build on another computer, install/pin the same versions and adapt the local paths.
 
-Programul a fost **încărcat în ESP32** după confirmarea conexiunilor. Utilizatorul a cerut explicit **fără copie a flash-ului ESP32**, deci nu am citit/salvat firmware-ul anterior. Nu schimbăm firmware-ul analizorului DLA.
+The program was **uploaded to the ESP32** after the connections were confirmed. The user explicitly requested **no backup of the ESP32 flash**, so the previous firmware was not read or saved. The DLA analyzer firmware is not changed.
 
-Rezultat 2026-10-03: **compilare reușită**, RAM 22.288 B, dimensiune raportată a aplicației 304.459 B. Log: `logs/build-esp32-signal-source-fixed.log`. Imagine: `.pio/build/freenove-wrover/firmware.bin`, SHA-256 `b433995ce5601dc809f1f8228698aaef80904f3cb322f2308e8586829c7502cd`. PWM este ulterior verificat prin capturile reale descrise mai jos.
+Result on 2026-10-03: **successful build**, RAM 22,288 B, reported application size 304,459 B. Log: `logs/build-esp32-signal-source-fixed.log`. Image: `.pio/build/freenove-wrover/firmware.bin`, SHA-256 `b433995ce5601dc809f1f8228698aaef80904f3cb322f2308e8586829c7502cd`. PWM was subsequently checked using the real captures described below.
 
-Încărcarea a trecut verificarea hash-ului pentru toate cele patru segmente: bootloader, partiții, boot_app0 și aplicație. Log `logs/esp32-upload-pwm-utf8.log`. Prima încercare s-a oprit la afișarea progresului din cauza codepage-ului Windows; reluată integral cu Python `-X utf8` și finalizată corect.
+The upload passed hash verification for all four segments: bootloader, partitions, boot_app0 and application. Log: `logs/esp32-upload-pwm-utf8.log`. The first attempt stopped while displaying progress because of the Windows code page; it was repeated in full with Python `-X utf8` and completed successfully.
 
-Control manual fără reset intenționat, din rădăcina proiectului:
+Manual control without an intentional reset, from the project root:
 
 ```powershell
 & 'C:\Users\User\.platformio\penv\Scripts\python.exe' -X utf8 tools/esp32_pwm_control.py STATUS
 & 'C:\Users\User\.platformio\penv\Scripts\python.exe' -X utf8 tools/esp32_pwm_control.py ON
 ```
 
-Comanda `OFF` oprește ieșirea dacă utilizatorul o solicită. La cererea lui, **lăsăm semnalul activ după probe**, fără OFF automat la închiderea portului serial. Un reset sau o reconectare USB repornește firmware-ul cu PWM oprit și necesită din nou `ON`.
+The `OFF` command stops the output if the user requests it. At the user's request, **the signal is left active after testing**, with no automatic OFF when the serial port closes. A reset or USB reconnection restarts the firmware with PWM off and requires `ON` again.
 
-Stare verificată: serialul confirmă `enabled=1 ready=1`, iar **Buffer 50k, Buffer 500k și Stream 500k trec analiza PWM pe D0**, la 50 MHz, prag 1,6 V și 32 canale active. Probele de 500k raportează aproximativ **100.002,4 Hz și 49,999% duty**, cu perioade de 499–500 eșantioane; ceasul DLA nu este calibrat independent. Capturile și rapoartele sunt în `captures/2026-10-03-ESP32-PWM100kHz-D0-32ch-50MHz-*`, iar Buffer 500k este reîncărcat în PulseView. Stream lung și debitul USB 3 nu sunt validate de aceste probe scurte.
+Verified state: serial reports `enabled=1 ready=1`, and **Buffer 50k, Buffer 500k and Stream 500k pass PWM analysis on D0**, at 50 MHz, a 1.6 V threshold and 32 enabled channels. The 500k tests report approximately **100,002.4 Hz and 49.999% duty**, with periods of 499–500 samples; the DLA clock is not independently calibrated. Captures and reports are in `captures/2026-10-03-ESP32-PWM100kHz-D0-32ch-50MHz-*`, and Buffer 500k was reloaded in PulseView. Long Stream captures and USB 3 throughput are not validated by these short tests.

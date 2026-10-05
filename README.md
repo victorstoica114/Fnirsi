@@ -1,42 +1,44 @@
-# FNIRSI DLA-32 Plus în PulseView
+# FNIRSI DLA-32 Plus in PulseView
 
-Proiect de integrare a analizorului FNIRSI DLA-32 Plus în libsigrok și PulseView, cu transport USB 3 pe Windows prin driverul WCH și codul de transport libusb. Obiectivul este o integrare fiabilă, verificată pe hardware.
+This project integrates the FNIRSI DLA-32 Plus logic analyzer into libsigrok and PulseView, using USB 3 transport on Windows through the WCH driver and libusb transport code. The goal is reliable integration validated on hardware.
 
-Acest repository păstrează munca de dezvoltare: sursele, variantele succesive ale driverului, scripturile de compilare, testele și programele ESP32 folosite ca surse de semnal. Capturile, aplicațiile descărcate, executabilele compilate și pachetele de probe pentru producător nu sunt incluse.
+This repository contains the development work: source code, successive driver variants, build scripts, tests, and ESP32 programs used as signal sources. Captures, downloaded applications, compiled binaries, and evidence packages prepared for the manufacturer are excluded.
 
-## Starea proiectului la 4 octombrie 2026
+## Project status as of October 4, 2026
 
-Integrarea inițială funcționează și a afișat PWM în PulseView. Validarea completă rămâne în lucru.
+The initial integration works and has displayed PWM in PulseView. Full validation is still in progress.
 
-- `src/libsigrok` și `src/pulseview` păstrează sursele integrării principale.
-- `artifacts/dla32-wch-stop-v5-source/libsigrok` păstrează ultima variantă experimentală V5. Aceasta corectează păstrarea obligației de STOP și recuperarea resurselor pentru politica SDK0, cu păstrarea politicii SDK1.
-- V5 are verificări software și probe hardware parțiale. Nu a înlocuit DLL-ul folosit de instalarea principală PulseView.
-- Rămân de investigat deplasările canalelor în Stream, o captură Buffer incompletă și apariția unor fragmente de comandă în datele returnate de SDK. Cauza exactă nu este stabilită.
-- Integritatea unui Stream lung și ținta de 200 MB/s fără pierderi nu sunt confirmate.
+- `src/libsigrok` and `src/pulseview` contain the main integration sources.
+- `artifacts/dla32-wch-stop-v5-source/libsigrok` contains the latest experimental V5 variant included in this snapshot. It tracks outstanding STOP and resource recovery under the SDK0 policy while preserving the SDK1 policy.
+- V5 has software checks and partial hardware validation. It has not replaced the DLL used by the main PulseView installation.
+- Stream channel shifts, an incomplete Buffer capture, and command fragments appearing in data returned by the SDK still require investigation. The exact cause has not been established.
+- Long Stream integrity and sustained, lossless throughput of 200 MB/s remain unconfirmed.
 
-Următorii pași sunt instrumentarea graniței SDK/kernel/USB, închiderea testelor de pornire/oprire/recuperare și validarea tuturor canalelor, măștilor, triggerelor, pragurilor, ieșirilor PWM și protocoalelor.
+The next steps are to instrument the SDK/kernel/USB boundaries, complete start/stop/recovery tests, and validate all channels, masks, triggers, thresholds, PWM outputs, and protocols.
 
-## Conținut
+## Contents
 
-| Director | Rol |
+| Directory | Purpose |
 | --- | --- |
-| `src/` | Sursele de lucru și referințele upstream, cu reviziile din `sources.lock.json`. |
-| `artifacts/*-source/` | Variantele izolate ale driverului, păstrate pentru comparație și reproducere. |
-| `artifacts/*-tests/` | Sursele fixture-urilor pentru testele software. |
-| `artifacts/source-changes/` | Patch-urile integrării inițiale. |
-| `tools/` | Scripturi de compilare, analiză și testare; includ scripturi care accesează hardware-ul dacă sunt executate. |
-| `firmware/` | Codul ESP32 folosit pentru semnale de referință. |
-| `private/` | Jurnalele tehnice într-o arhivă 7z criptată, cu numele fișierelor criptate. |
-| `backup/` | Lista SHA-256 a fișierelor originale incluse și verificarea pregătirii backupului. |
+| `src/` | Working sources and upstream references, with revisions recorded in `sources.lock.json`. |
+| `artifacts/*-source/` | Isolated driver variants retained for comparison and reproduction. |
+| `artifacts/*-tests/` | Source files for software test fixtures. |
+| `artifacts/source-changes/` | Patches for the initial integration. |
+| `tools/` | Build, analysis, and test scripts; some access hardware when executed. |
+| `firmware/` | ESP32 code used to generate reference signals. |
+| `private/` | Technical journals in a 7z archive with encrypted contents and filenames. |
+| `backup/` | SHA-256 records of the original included files, backup preparation checks, and translation checksums. |
 
-Vezi [instrucțiunile de compilare și restaurare](BUILD_AND_RESTORE.md). Nu există executabile gata de instalat în acest backup.
+See the [build and restore instructions](BUILD_AND_RESTORE.md). This backup does not include ready-to-install binaries.
 
-## Jurnalele private
+## Private journals
 
-`private/driver-work-notes-2026-10-04.7z` conține nouă jurnale tehnice. Cheia este păstrată separat, local; nu este în Git. Corespondența și documentele de trimitere către FNIRSI sunt excluse din acest backup.
+`private/driver-work-notes-2026-10-04.7z` contains nine technical journals. The key is stored separately, locally; it is not in Git. Correspondence and documents used to send reports to FNIRSI are excluded from this backup.
 
-Arhiva a fost testată, extrasă într-un director separat, iar toate cele nouă fișiere restaurate au fost comparate prin SHA-256 cu originalele. O cheie greșită nu permite listarea numelor fișierelor.
+The archive was tested and extracted into a separate directory. All nine restored files were compared with the originals using SHA-256. An incorrect key cannot list the encrypted filenames.
 
-## Proveniență și licențe
+## Provenance and licenses
 
-Reviziile de origine sunt în [sources.lock.json](sources.lock.json). Fișierele `COPYING`, `AUTHORS` și celelalte notificări din componentele upstream sunt păstrate. Fiecare componentă își păstrează licența; acest repository nu atribuie o licență nouă întregului proiect. Bibliotecile și driverul proprietar WCH trebuie obținute separat.
+Original revisions are recorded in [sources.lock.json](sources.lock.json). Upstream `COPYING`, `AUTHORS`, and other notices are preserved. Each component retains its own license; this repository does not assign a new license to the entire project. The proprietary WCH library and driver must be obtained separately.
+
+The original backup manifest remains a record of the `backup-driver-2026-10-04` snapshot. Checksums for the later English translations are recorded separately in [backup/english-translation.sha256.json](backup/english-translation.sha256.json).

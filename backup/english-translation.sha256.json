@@ -1,0 +1,74 @@
+{
+  "schema": 1,
+  "translation_date": "2026-10-05",
+  "language": "en",
+  "source_commit": "31c74660fa97ae70476c5b3cfef6a7797b26d7fe",
+  "source_tag": "backup-driver-2026-10-04",
+  "scope": "Public project documentation and script prose; original backup records and encrypted journals are preserved.",
+  "files": [
+    {
+      "path": "README.md",
+      "original_sha256": "6d962bf01b7fd5deb40cf2bf2e6e89e53656d64eb312e6531b69581e5c183019",
+      "translated_sha256": "3d8bfd5f527fccf3561ee0813fa5a2a9545963b14ca84485a45d6d04bd95e195",
+      "original_size_bytes": 3416,
+      "translated_size_bytes": 3473,
+      "included_in_original_source_manifest": false
+    },
+    {
+      "path": "BUILD_AND_RESTORE.md",
+      "original_sha256": "59398c9c51ba80cf5c8477b25eae19601ba4da04508c2b61df5169c2c030226f",
+      "translated_sha256": "b399e3cc5ef36e36a8b0ccac7b977148d0299b9777ebc92efed394291c09e950",
+      "original_size_bytes": 4132,
+      "translated_size_bytes": 4231,
+      "included_in_original_source_manifest": false
+    },
+    {
+      "path": "firmware/esp32-register-pwm/README.md",
+      "original_sha256": "4e6c54931c7b0f3cab0d1c31236df898e7b258d94293fb5666afae507a0bbb5f",
+      "translated_sha256": "67eb686ec33ed7bccabd1a696265dde5dca2a8b1c9fc6a9ad3c740f9659ad1f6",
+      "original_size_bytes": 3659,
+      "translated_size_bytes": 3581,
+      "included_in_original_source_manifest": true
+    },
+    {
+      "path": "firmware/esp32-signal-source/README.md",
+      "original_sha256": "d2fa08e99c536457d3a12b3ce22a6f3997130e4ef2b7d4c92a82e35e20c12bc1",
+      "translated_sha256": "d91dcb5350360eb849d7e3f24ede6db7b67a909b39a01f36a36100f2809f5407",
+      "original_size_bytes": 4003,
+      "translated_size_bytes": 3957,
+      "included_in_original_source_manifest": true
+    },
+    {
+      "path": "tools/invoke_build.ps1",
+      "original_sha256": "c1205ee6b503f1c574c9373593145e618957aa993be75f931b4d87b9e9e6d78e",
+      "translated_sha256": "0aff450f1f39ce45f0ee0bb364efa95eb273aa46be5d58434dcf834b3f0117c2",
+      "original_size_bytes": 699,
+      "translated_size_bytes": 696,
+      "included_in_original_source_manifest": true
+    },
+    {
+      "path": "tools/package_la1010_reference.py",
+      "original_sha256": "7aeb14888897bb950a2a1a990467a8fd424645662a04180d46f26c7b6b9fbe3f",
+      "translated_sha256": "2e2acc872892c2d70879264ab2418218f3f5b1520bf3ebecb8483122061bb412",
+      "original_size_bytes": 7292,
+      "translated_size_bytes": 7207,
+      "included_in_original_source_manifest": true
+    }
+  ],
+  "original_backup_files_checked": 5898,
+  "original_backup_files_unchanged": 5894,
+  "original_backup_files_translated": [
+    "tools/invoke_build.ps1",
+    "tools/package_la1010_reference.py",
+    "firmware/esp32-signal-source/README.md",
+    "firmware/esp32-register-pwm/README.md"
+  ],
+  "validation": {
+    "changed_files_match_translation_scope": true,
+    "command_fences_preserved_except_translated_comments": true,
+    "packaging_script_AST_unchanged_except_README_text": true,
+    "original_manifest_and_verification_records_unchanged": true,
+    "encrypted_journals_unchanged": true,
+    "hardware_accessed": false
+  }
+}

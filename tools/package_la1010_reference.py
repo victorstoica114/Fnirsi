@@ -89,55 +89,55 @@ $env:SIGROK_FIRMWARE_DIR=Join-Path $PSScriptRoot 'firmware'
 & (Join-Path $PSScriptRoot 'sigrok-cli.exe') @args
 exit $LASTEXITCODE
 """, encoding="utf-8-sig")
-(destination / "README.md").write_text("""# Kingst LA1010: runtime CLI separat
+(destination / "README.md").write_text("""# Kingst LA1010: isolated CLI runtime
 
-Build local libsigrok 0.6.0 cu driverele `kingst-la2016`, `fnirsi-dla32` și
-`demo`. Driverul `kingst-la2016` include LA1010 și selectează revizia prin
-EEPROM. Acest pachet conține numai sigrok-cli și bibliotecile sale; aplicațiile
-PulseView și runtime-ul DLA32 existent rămân în directoarele lor.
+Local libsigrok 0.6.0 build with the `kingst-la2016`, `fnirsi-dla32` and
+`demo` drivers. The `kingst-la2016` driver includes LA1010 and selects its
+revision through EEPROM. This package contains only sigrok-cli and its
+libraries; PulseView and the existing DLA32 runtime stay in their directories.
 
-Biblioteca și CLI au fost compilate într-un arbore separat
-`/tmp/la1010-reference-build`, cu prefix `/opt/la1010-reference`.
-Suportul libsigrokdecode este dezactivat pentru această unealtă de captură;
-fișierele `.sr` se pot deschide ulterior în PulseView existent.
+The library and CLI were built in a separate source tree,
+`/tmp/la1010-reference-build`, with the prefix `/opt/la1010-reference`.
+libsigrokdecode support is disabled for this capture tool; `.sr` files can
+be opened later in the existing PulseView installation.
 
-Listarea driverelor (fără scanare de dispozitive):
+List the drivers (without scanning devices):
 
 ```powershell
 & .\\Sigrok-LA1010.ps1 --list-supported
 ```
 
-Scanarea/captura se face ulterior, când conexiunile de test sunt pregătite:
+Scan or capture later, once the test connections are ready:
 
 ```powershell
 & .\\Sigrok-LA1010.ps1 --scan -d kingst-la2016
 ```
 
-Scriptul setează `SIGROK_FIRMWARE_DIR` spre subdirectorul `firmware`. Acesta
-conține firmware-ul MCU `kingst-la-01a2.fw` și cele trei bitstream-uri LA1010.
-Sunt extrase fără modificări din pachetul oficial KingstVIS 3.6.6 Linux,
-folosind extractorul sigrok. Proveniența este în
-`firmware/asset-download-record.json`. Driverul poate încărca automat firmware
-în RAM/FPGA la scanare dacă dispozitivul are nevoie; listarea driverelor nu
-face această operație. Nu se citește sau salvează firmware de pe ESP32.
+The script sets `SIGROK_FIRMWARE_DIR` to the `firmware` subdirectory, which
+contains the MCU firmware `kingst-la-01a2.fw` and the three LA1010 bitstreams.
+They are extracted unchanged from the official KingstVIS 3.6.6 Linux package
+using the sigrok extractor. Provenance is recorded in
+`firmware/asset-download-record.json`. During scanning, the driver may
+automatically load firmware into RAM/FPGA if the device requires it; listing
+the drivers does not perform this operation. No ESP32 firmware is read or saved.
 
-Pachetul nu instalează un driver USB Windows. Accesul hardware depinde de
-driverul USB compatibil deja instalat sau pregătit separat. LA1010 expune
-16 intrări CH0–CH15; capturile sigrok au eșantioane de doi octeți.
+The package does not install a Windows USB driver. Hardware access depends
+on a compatible USB driver already installed or prepared separately. LA1010
+provides 16 inputs, CH0–CH15; sigrok captures use two-byte samples.
 
-Corecția locală Windows este salvată în `windows-usb-fix.patch`, cu sursa
-completă separată în `artifacts/la1010-reference-source/libsigrok`. Pe Windows,
-libusb nu expune pollfd-uri; GSource folosește un timer de 2 ms și callback-ul
-Kingst pompează evenimentele neblocant. Pornirea verifică sursa și HEADER,
-iar oprirea păstrează buffer-ele până la toate callback-urile de anulare.
-Oprirea cerută dintr-un callback este amânată până la sursa de evenimente.
-Arborele principal libsigrok și DLL-ul DLA32 nu includ această corecție.
-Sursa primară: https://libusb.sourceforge.io/api-1.0/group__libusb__poll.html
+The local Windows fix is saved in `windows-usb-fix.patch`, with the complete
+source tree stored separately in `artifacts/la1010-reference-source/libsigrok`.
+On Windows, libusb does not expose pollfds; GSource uses a 2 ms timer and the
+Kingst callback services events without blocking. Startup checks the event
+source and HEADER; stopping retains the buffers until all cancellation
+callbacks complete. A stop requested inside a callback is deferred to the
+event source. The main libsigrok tree and DLA32 DLL do not include this fix.
+Primary source: https://libusb.sourceforge.io/api-1.0/group__libusb__poll.html
 
-Driverul original pentru LA1010 fără memorie nu implementează triggerul
-software în stream și poate depăși limita de eșantioane până la capătul unui
-chunk USB. Evaluarea trebuie să folosească numărul efectiv și ciclurile
-complete, fără să considere acceptarea opțiunii trigger drept validare fizică.
+The original driver for the LA1010 without onboard memory does not implement
+software triggering in Stream mode and may exceed the sample limit until the
+end of a USB chunk. Evaluation must use the actual sample count and complete
+cycles; accepting the trigger option does not constitute physical validation.
 """, encoding="utf-8")
 
 manifest = {
