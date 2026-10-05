@@ -59,6 +59,49 @@ On Windows, DLA-32 access through the WCH transport requires the FNIRSI/WCH driv
 
 `firmware/esp32-register-pwm` contains the simple register-based generator; `firmware/esp32-signal-source` contains the earlier test source. The original PlatformIO configurations use a locally installed platform. Adapt the `symlink://` path to your environment or configure the appropriate platform version before building. `.pio` files, flash images, and device backups are excluded.
 
+`firmware/esp32-protocol-source` is the current ESP-IDF source. It uses the LEDC,
+UART, SPI and I2C drivers, emits deterministic counter/CRC packets, and starts
+nominal 1 MHz / 50% PWM on GPIO32. Its README documents the current channel map,
+console commands and the distinction between an I2C NACK test pattern and actual
+slave communication. Build/upload helpers never read or back up previous ESP
+flash. Uploading a newly built image resets the board and replaces its program.
+
+## Experimental V6 source restoration
+
+```powershell
+python tools/restore_dla32_worker_v6_source.py
+```
+
+The helper verifies all 489 V5 base files and the three overlay files before
+copying. It then verifies all 490 resulting source files. It refuses an existing
+destination and performs no hardware access. The restored source directory is
+ignored by Git because the base and overlay already preserve it exactly.
+
+With the original MSYS2 path mappings and dependencies prepared:
+
+```bash
+bash /tmp/dla32-project/tools/build_dla32_wch_worker_v6.sh
+bash /tmp/dla32-project/tools/test_dla32_wch_worker_v6.sh fresh-unit-test-name
+bash /tmp/dla32-project/tools/test_dla32_wch_worker_v6_inherited.sh
+```
+
+The V6 fixture includes use relative paths. These scripts compile the isolated
+SDK0 worker core and its software tests. The core build disables C++; PulseView
+also needs a compatible C++ binding and its dependencies. The retained
+`package_dla32_pulseview_v6_cxx.py` documents the ABI checks used to assemble the
+tested local package from V6 and the separate V5 C++/PulseView build.
+
+Binary packages and workstation acceptance proofs are excluded from Git.
+Hardware runners pin the original tested DLL and supporting-file hashes;
+rebuilding does not automatically qualify a different binary. Create and verify
+matching package manifests and acceptance evidence before hardware use. The
+source-tree checksum is reproducible; byte-identical binaries are not promised.
+
+The timer probe and archive verifier are separate diagnostics. The timer probe
+requests/restores a process-scoped resolution and does not alter the frozen
+driver. The archive verifier compares metadata, byte count and every saved logic
+byte against the full original binary; exporter exit status alone is insufficient.
+
 ## Backup limitations
 
 This backup preserves the selected development code and notes. RAW data, `.sr` captures, measurement exports, logs, screenshots, reports prepared for FNIRSI, and binary packages remain exclusively in the original local directory. They cannot be restored from this repository.

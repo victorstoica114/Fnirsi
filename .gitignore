@@ -15,6 +15,8 @@
 /tools/package_buffer_evidence.py
 /tools/package_fnirsi_stream_evidence.py
 /tools/replay_fnirsi_stream_evidence.py
+/artifacts/dla32-wch-worker-v6-source/
+/restoration-test/
 
 # Private notes belong only in the encrypted archive.
 /PROIECT_DLA32_PULSEVIEW.md
@@ -27,6 +29,11 @@
 /RAPORT_BUFFER_COMPARATIV_DLA32.md
 /DRAFT_EMAIL_FNIRSI.md
 /TRIMITERE_FNIRSI.md
+/VALIDARE_*.md
+/TESTE_PROTOCOALE_*.md
+/PLAN_TESTE_PROTOCOALE_*.md
+/USB_RECUPERARE_*.md
+/FIABILITATE_WCH_WORKER_V6.md
 *DECRYPTION_KEY*
 *.key
 .env
@@ -45,3 +52,9 @@
 *.obj
 *.a
 *.so
+*.zip
+*.sr
+*.bin
+*.elf
+*.etl
+*.png
