@@ -58,3 +58,11 @@
 *.elf
 *.etl
 *.png
+
+# V7 local builds, acceptance files and private work logs.
+/artifacts/dla32-wch-worker-v7*-source/
+/artifacts/dla32-wch-worker-v7*-sdk0/
+/artifacts/dla32-wch-worker-v7*-restoration-check/
+/artifacts/dla32-wch-worker-v7-recipe-check/
+/FIABILITATE_WCH_WORKER_*.md
+*.log

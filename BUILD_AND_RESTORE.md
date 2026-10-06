@@ -1,5 +1,7 @@
 # Build and restore
 
+For the current V7 r2 source, run `python tools/restore_dla32_worker_v7_r2_source.py`. This verifies and restores all 490 files from the archived V5 base plus the compact overlay. Then use `tools/build_dla32_wch_worker_v7_r2_fresh.sh` and the V7 r2 interaction/inherited test scripts; see [V7 r2 status](V7_VALIDATION_STATUS.md). Hardware launchers require separate local acceptance evidence and matching DLL hashes.
+
 ## Restore the sources
 
 ```powershell

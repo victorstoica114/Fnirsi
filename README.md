@@ -1,5 +1,7 @@
 # FNIRSI DLA-32 Plus in PulseView
 
+Current development backup: [V7 r2 validation status](V7_VALIDATION_STATUS.md). Event-driven transport and recovery checks are implemented; continuous 32-channel Stream passes the tested 12-second interval at 25 MS/s. Continuous 50 MS/s still fails packet integrity, and 200 MB/s is not achieved. This branch is an experimental source backup.
+
 This project integrates the FNIRSI DLA-32 Plus logic analyzer into libsigrok and PulseView, using USB 3 transport on Windows through the WCH driver and libusb transport code. The goal is reliable integration validated on hardware.
 
 This repository contains the development work: source code, successive driver variants, build scripts, tests, and ESP32 programs used as signal sources. Captures, downloaded applications, compiled binaries, and evidence packages prepared for the manufacturer are excluded.
