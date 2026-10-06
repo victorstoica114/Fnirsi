@@ -1,0 +1,615 @@
+{
+  "source_files": [
+    {
+      "path": ".gitignore",
+      "bytes": 1873,
+      "sha256": "f3412d361e9a49662c7d17791839704628a747ed83be01ab2c2fff8fc413a0a9"
+    },
+    {
+      "path": "BUILD_AND_RESTORE.md",
+      "bytes": 7779,
+      "sha256": "b239a94fd0db3da88debf18825c0e697ba87fdd3ac9b2545dfd5bc9d9a661e00"
+    },
+    {
+      "path": "README.md",
+      "bytes": 5128,
+      "sha256": "62a079058bd0a93c6c1d832a9cc8d0f10adc0679ff885eb8d3ed1b1792140781"
+    },
+    {
+      "path": "STREAM_TRANSPORT_STATUS.md",
+      "bytes": 3484,
+      "sha256": "741010cf7d9ff0993ea5e02700e11b615df001bd246bd94cb3f1477c78da8aac"
+    },
+    {
+      "path": "artifacts/dla32-stream-source-overlays/v10/api.c",
+      "bytes": 63746,
+      "sha256": "f871d8325a2dc25113218f08cc927bc6ac4a32f9a50f9e5698019abf4141dc26",
+      "original_source_sha256": "f871d8325a2dc25113218f08cc927bc6ac4a32f9a50f9e5698019abf4141dc26",
+      "fixture_include_made_relative": true
+    },
+    {
+      "path": "artifacts/dla32-stream-source-overlays/v10/manifest.json",
+      "bytes": 147114,
+      "sha256": "7382d5851aaebae7c595b5ad2b352387d7551222468de160b32b90fec290517e",
+      "original_source_sha256": "7382d5851aaebae7c595b5ad2b352387d7551222468de160b32b90fec290517e",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "artifacts/dla32-stream-source-overlays/v10/transport-wch.h",
+      "bytes": 15053,
+      "sha256": "5dfa17f28ea8f9a6fced6952146cb4b3d4f4f2c2637ae8950e66366660b1a3f2",
+      "original_source_sha256": "5dfa17f28ea8f9a6fced6952146cb4b3d4f4f2c2637ae8950e66366660b1a3f2",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "artifacts/dla32-stream-source-overlays/v10/worker-wch.h",
+      "bytes": 16875,
+      "sha256": "81425aa904506e86df48c221f2b72b6821db83fd37528dd354abc9dfcd16e8ab",
+      "original_source_sha256": "81425aa904506e86df48c221f2b72b6821db83fd37528dd354abc9dfcd16e8ab",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "artifacts/dla32-stream-source-overlays/v11/api.c",
+      "bytes": 64193,
+      "sha256": "bb31166a2fd4873abac6856ee7eded17c4c6863e1bde0d8c209261d7313d0ac9",
+      "original_source_sha256": "bb31166a2fd4873abac6856ee7eded17c4c6863e1bde0d8c209261d7313d0ac9",
+      "fixture_include_made_relative": true
+    },
+    {
+      "path": "artifacts/dla32-stream-source-overlays/v11/manifest.json",
+      "bytes": 147114,
+      "sha256": "1f28796ebe3ab8f48118d07c66d4e4da6a04d16afa6aec8a33b0bfdfc2798ae1",
+      "original_source_sha256": "1f28796ebe3ab8f48118d07c66d4e4da6a04d16afa6aec8a33b0bfdfc2798ae1",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "artifacts/dla32-stream-source-overlays/v11/transport-wch.h",
+      "bytes": 11719,
+      "sha256": "695ad5bbad41a17d6ee6b5a928d6b82c1e560232d02ad6fd7a2072e0ef149ef9",
+      "original_source_sha256": "695ad5bbad41a17d6ee6b5a928d6b82c1e560232d02ad6fd7a2072e0ef149ef9",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "artifacts/dla32-stream-source-overlays/v11/worker-wch.h",
+      "bytes": 15144,
+      "sha256": "54c4111769c9587b06a1ed871489e2708cd94a51ba600a89fa7dfa2689f1030b",
+      "original_source_sha256": "54c4111769c9587b06a1ed871489e2708cd94a51ba600a89fa7dfa2689f1030b",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "artifacts/dla32-stream-source-overlays/v8/api.c",
+      "bytes": 63746,
+      "sha256": "f871d8325a2dc25113218f08cc927bc6ac4a32f9a50f9e5698019abf4141dc26",
+      "original_source_sha256": "f871d8325a2dc25113218f08cc927bc6ac4a32f9a50f9e5698019abf4141dc26",
+      "fixture_include_made_relative": true
+    },
+    {
+      "path": "artifacts/dla32-stream-source-overlays/v8/manifest.json",
+      "bytes": 147113,
+      "sha256": "c6e060eabe1c3ac0851e0c0784e620788370cd4edcd00f29104f5c2e7b28f0c6",
+      "original_source_sha256": "c6e060eabe1c3ac0851e0c0784e620788370cd4edcd00f29104f5c2e7b28f0c6",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "artifacts/dla32-stream-source-overlays/v8/transport-wch.h",
+      "bytes": 11719,
+      "sha256": "695ad5bbad41a17d6ee6b5a928d6b82c1e560232d02ad6fd7a2072e0ef149ef9",
+      "original_source_sha256": "695ad5bbad41a17d6ee6b5a928d6b82c1e560232d02ad6fd7a2072e0ef149ef9",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "artifacts/dla32-stream-source-overlays/v8/worker-wch.h",
+      "bytes": 15502,
+      "sha256": "131f9bc101d346e41a075a268003230456ca740be4095200bb4f58a009d0b604",
+      "original_source_sha256": "131f9bc101d346e41a075a268003230456ca740be4095200bb4f58a009d0b604",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "artifacts/dla32-stream-source-overlays/v9/api.c",
+      "bytes": 63746,
+      "sha256": "f871d8325a2dc25113218f08cc927bc6ac4a32f9a50f9e5698019abf4141dc26",
+      "original_source_sha256": "f871d8325a2dc25113218f08cc927bc6ac4a32f9a50f9e5698019abf4141dc26",
+      "fixture_include_made_relative": true
+    },
+    {
+      "path": "artifacts/dla32-stream-source-overlays/v9/manifest.json",
+      "bytes": 147113,
+      "sha256": "98a7971c9f7f583707b2665a022dd3209b5c274f4f2a24c284a70bd6b45f3aed",
+      "original_source_sha256": "98a7971c9f7f583707b2665a022dd3209b5c274f4f2a24c284a70bd6b45f3aed",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "artifacts/dla32-stream-source-overlays/v9/transport-wch.h",
+      "bytes": 12770,
+      "sha256": "811b5862a7ed03fb12e9349924d80c5771e9943dee1b5454bc36debb84fdcbde",
+      "original_source_sha256": "811b5862a7ed03fb12e9349924d80c5771e9943dee1b5454bc36debb84fdcbde",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "artifacts/dla32-stream-source-overlays/v9/worker-wch.h",
+      "bytes": 16509,
+      "sha256": "a0a417dcf9bfc9f57b8fb777ff0ae8f4efada2cc346c8abda7ad8a7ad176bd7c",
+      "original_source_sha256": "a0a417dcf9bfc9f57b8fb777ff0ae8f4efada2cc346c8abda7ad8a7ad176bd7c",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "artifacts/dla32-wch-worker-v10-tests/test_dla32_worker_v10_unit.c",
+      "bytes": 44974,
+      "sha256": "8ca1779a37f6729b8691acf400c8749348a058c3125ef3a69d5f0e655680d129",
+      "original_source_sha256": "02210a19bf90e035333f0d4b33a4b8b026b3f4121459d7ac534d98ab5a4e9f0d",
+      "fixture_include_made_relative": true
+    },
+    {
+      "path": "artifacts/dla32-wch-worker-v10-tests/test_dla32_worker_v10_upload.c",
+      "bytes": 5263,
+      "sha256": "64198f25ede18f890c4037953ef2164709412af1ae3b7f04536af874e5ae3a7c",
+      "original_source_sha256": "64198f25ede18f890c4037953ef2164709412af1ae3b7f04536af874e5ae3a7c",
+      "fixture_include_made_relative": true
+    },
+    {
+      "path": "artifacts/dla32-wch-worker-v8-tests/test_dla32_wch_worker_v8_inherited_sdk0.c",
+      "bytes": 63885,
+      "sha256": "cfd67c7bbb0eebc55badf7fe8b4b560c7b10f054e67f752c12c7186734b3c3d4",
+      "original_source_sha256": "d18ceb7acd7acfea93ad4356ecf15b45f6c6bd36405d9bd943010df2349cdfbc",
+      "fixture_include_made_relative": true
+    },
+    {
+      "path": "artifacts/dla32-wch-worker-v8-tests/test_dla32_wch_worker_v8_inherited_sdk1.c",
+      "bytes": 90908,
+      "sha256": "86127b6058fbcdf9042033c200c3ef122e3206f0df9f9db77026ae804d7d6633",
+      "original_source_sha256": "6fef1a1996981e5e3280105a8004c9e253cf13f7b06874d2ab9a55707f0efd24",
+      "fixture_include_made_relative": true
+    },
+    {
+      "path": "artifacts/dla32-wch-worker-v8-tests/test_dla32_wch_worker_v8_inherited_timeout.c",
+      "bytes": 8100,
+      "sha256": "375472664727596744908d3a6e1064d2dd72c67cf8159ee128ce9d92164cda88",
+      "original_source_sha256": "72b288b1619af631d3ba402c3121a9ab491b68489fa11d586a258d5928378edd",
+      "fixture_include_made_relative": true
+    },
+    {
+      "path": "artifacts/dla32-wch-worker-v8-tests/test_dla32_wch_worker_v8_unit.c",
+      "bytes": 43828,
+      "sha256": "d104a9b103df40bc9b93e2e6b19ca1861dd254c7adf495e4da0bb66fe65c0be0",
+      "original_source_sha256": "d52150bcbb88af2b9bb64bb5402398c5de497bb19fc0656f6bad20579d0a8071",
+      "fixture_include_made_relative": true
+    },
+    {
+      "path": "artifacts/dla32-wch-worker-v8-tests/test_dla32_wch_worker_v8_unit_deep_r2.c",
+      "bytes": 43828,
+      "sha256": "2dd02d1dd1dc331fc292dedb5da8691a2bda6232d34956b9039c99862e48032b",
+      "original_source_sha256": "939851d4713050e353dbdc4224992a369670edf22b3a028b84bb7bb82a4d9126",
+      "fixture_include_made_relative": true
+    },
+    {
+      "path": "artifacts/dla32-wch-worker-v9-tests/test_dla32_worker_v9_unit.c",
+      "bytes": 44283,
+      "sha256": "c8fb0a84b0707aeaa4e2fa18a7463d36d04524b08101316a8d9d3495f493fbcf",
+      "original_source_sha256": "a5b7d8c783a20f32eff1d2062f47fa024481a747cb635e4ec9c99632c369dfc5",
+      "fixture_include_made_relative": true
+    },
+    {
+      "path": "artifacts/dla32-wch-worker-v9-tests/test_dla32_worker_v9_upload_initial.c",
+      "bytes": 4584,
+      "sha256": "d6f79db5495f9a55eb8cf44b94b8ca7a1de286057a2846f0dd2dcd4493492227",
+      "original_source_sha256": "d6f79db5495f9a55eb8cf44b94b8ca7a1de286057a2846f0dd2dcd4493492227",
+      "fixture_include_made_relative": true
+    },
+    {
+      "path": "artifacts/dla32-wch-worker-v9-tests/test_dla32_worker_v9_upload_r2.c",
+      "bytes": 5157,
+      "sha256": "abbfdbc369a4cc50254e8e4a501bca0c62df9105b4d2ac4cb38c538ec2a39960",
+      "original_source_sha256": "abbfdbc369a4cc50254e8e4a501bca0c62df9105b4d2ac4cb38c538ec2a39960",
+      "fixture_include_made_relative": true
+    },
+    {
+      "path": "artifacts/dla32-winusb-v11-tests/test_dla32_winusb_v11_unit.c",
+      "bytes": 43772,
+      "sha256": "8fc31afcf5eb5972a75906f52c9a0f686ac3d6268d676dc4f76026d63896c256",
+      "original_source_sha256": "54cf92db69baac17ea1314bc2db0a9ba30c36a73d0da20aac46ccb6378422aba",
+      "fixture_include_made_relative": true
+    },
+    {
+      "path": "tools/accept_dla32_winusb_v11.py",
+      "bytes": 2671,
+      "sha256": "6b64519830bb9ed91ed38327c135cf990de29569fcf95c82a185ef13c78e18d3",
+      "original_source_sha256": "6b64519830bb9ed91ed38327c135cf990de29569fcf95c82a185ef13c78e18d3",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/accept_dla32_worker_v10.py",
+      "bytes": 3807,
+      "sha256": "5636b66bfb1b21fa979f9d63caeeb074cdbd16874766f8c4dd778ed97ecf1ed6",
+      "original_source_sha256": "5636b66bfb1b21fa979f9d63caeeb074cdbd16874766f8c4dd778ed97ecf1ed6",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/accept_dla32_worker_v8.py",
+      "bytes": 4013,
+      "sha256": "c65d35a1fd68f7dcbdafc5a3248917fee970114d78f8d0b14465c1d929a01855",
+      "original_source_sha256": "c65d35a1fd68f7dcbdafc5a3248917fee970114d78f8d0b14465c1d929a01855",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/accept_dla32_worker_v8_deep_r2.py",
+      "bytes": 2729,
+      "sha256": "5434844eee1d28999d7a1e4c3eab4a0cd04ccf778191cc310f2941617733f297",
+      "original_source_sha256": "5434844eee1d28999d7a1e4c3eab4a0cd04ccf778191cc310f2941617733f297",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/accept_dla32_worker_v9.py",
+      "bytes": 3615,
+      "sha256": "172229b65e05e1f5c72b13aea96d2b3a2bfc4be5f649573516e14fbeefea7303",
+      "original_source_sha256": "172229b65e05e1f5c72b13aea96d2b3a2bfc4be5f649573516e14fbeefea7303",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/accept_dla32_worker_v9_upload1m.py",
+      "bytes": 2070,
+      "sha256": "a4a25dbc57af1b962b6e6096b12c430f732165e8a88f3aaaad778a29d57b09d4",
+      "original_source_sha256": "a4a25dbc57af1b962b6e6096b12c430f732165e8a88f3aaaad778a29d57b09d4",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/build_dla32_driver_binding.sh",
+      "bytes": 326,
+      "sha256": "924712592c1aae6500d35610bd860dff9ec1c652d8eaa028d3ddda20410c04e0",
+      "original_source_sha256": "924712592c1aae6500d35610bd860dff9ec1c652d8eaa028d3ddda20410c04e0",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/build_dla32_winusb_continuous.sh",
+      "bytes": 646,
+      "sha256": "4864026b692e7c5520e164815cc1fc9f0ab78645c1c6e45e3f0c1d9034b18233",
+      "original_source_sha256": "4864026b692e7c5520e164815cc1fc9f0ab78645c1c6e45e3f0c1d9034b18233",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/build_dla32_winusb_continuous_r2.sh",
+      "bytes": 655,
+      "sha256": "b3474fb27e3d9aaf9d44ec90ddf4ef45ba58286c39a7b83c265c4f60139b0cea",
+      "original_source_sha256": "b3474fb27e3d9aaf9d44ec90ddf4ef45ba58286c39a7b83c265c4f60139b0cea",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/build_dla32_winusb_v11.sh",
+      "bytes": 1611,
+      "sha256": "27ac69643c16f5df03e2799b011721f220342fe61d037d4b02ca2f270380801e",
+      "original_source_sha256": "27ac69643c16f5df03e2799b011721f220342fe61d037d4b02ca2f270380801e",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/build_dla32_worker_v10.sh",
+      "bytes": 1802,
+      "sha256": "962e18390068e48b847a9832f4348af33ca9a38d6354be193373930421e301b8",
+      "original_source_sha256": "962e18390068e48b847a9832f4348af33ca9a38d6354be193373930421e301b8",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/build_dla32_worker_v8.sh",
+      "bytes": 1940,
+      "sha256": "fbbdf906dd8280621ab7e74c4be598e72e96daa22044460ea5de97035844eb04",
+      "original_source_sha256": "fbbdf906dd8280621ab7e74c4be598e72e96daa22044460ea5de97035844eb04",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/build_dla32_worker_v8_deep_r2.sh",
+      "bytes": 1950,
+      "sha256": "8bee640aa229e8f98ca7b66ebf0196052ae9cd1cc8739a6c5c8529ae7afd3abc",
+      "original_source_sha256": "8bee640aa229e8f98ca7b66ebf0196052ae9cd1cc8739a6c5c8529ae7afd3abc",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/build_dla32_worker_v8_extra_tests.sh",
+      "bytes": 1521,
+      "sha256": "7660cffb189e05fdc5401abafe782e24f9c7479552946505965c0b9a7e0d24ef",
+      "original_source_sha256": "7660cffb189e05fdc5401abafe782e24f9c7479552946505965c0b9a7e0d24ef",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/build_dla32_worker_v9.sh",
+      "bytes": 1802,
+      "sha256": "7ac2d80811c09fd8b276a4d07e55087d2d6252feca27c633e0042ec888c797d2",
+      "original_source_sha256": "7ac2d80811c09fd8b276a4d07e55087d2d6252feca27c633e0042ec888c797d2",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/build_dla32_worker_v9_upload1m.sh",
+      "bytes": 1811,
+      "sha256": "2434fe5eafff31fb9c47f5874422bf343f83a90e91ef6862046927a1f2c2e619",
+      "original_source_sha256": "2434fe5eafff31fb9c47f5874422bf343f83a90e91ef6862046927a1f2c2e619",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/decode_dla32_wire_offline.c",
+      "bytes": 1560,
+      "sha256": "aca3489c47a9fd60945d18df2d77c5c17044f5c1b5d63600f95a6ffa50e326fd",
+      "original_source_sha256": "aca3489c47a9fd60945d18df2d77c5c17044f5c1b5d63600f95a6ffa50e326fd",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/dla32_driver_binding.c",
+      "bytes": 5844,
+      "sha256": "e591c5366ccee08bb4ac06533280f9ffb3b88fdacb65da4c9278d3fa7c138228",
+      "original_source_sha256": "e591c5366ccee08bb4ac06533280f9ffb3b88fdacb65da4c9278d3fa7c138228",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/dla32_lossless_logic_sink.h",
+      "bytes": 4274,
+      "sha256": "5820b3b3a370f920e94ae1036c56a342f6c7a2991e08e1e20ce7bd648b4d6aeb",
+      "original_source_sha256": "5820b3b3a370f920e94ae1036c56a342f6c7a2991e08e1e20ce7bd648b4d6aeb",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/dla32_native_sample_read.h",
+      "bytes": 1723,
+      "sha256": "595a63be3301f1c557b7e9bdb7d87aaa9520e9514f3c0d22988eb8b4435ef600",
+      "original_source_sha256": "595a63be3301f1c557b7e9bdb7d87aaa9520e9514f3c0d22988eb8b4435ef600",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/dla32_usb_descriptors.c",
+      "bytes": 1186,
+      "sha256": "2a3a4f149a656ad9d494849ba03494e8caec753c353b483e2a6d44762539339c",
+      "original_source_sha256": "2a3a4f149a656ad9d494849ba03494e8caec753c353b483e2a6d44762539339c",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/install_existing_dla32_driver.ps1",
+      "bytes": 1119,
+      "sha256": "d787cd410755edb8df83897c63423967f004acd18bcd46375f238a7ce61f634f",
+      "original_source_sha256": "d787cd410755edb8df83897c63423967f004acd18bcd46375f238a7ce61f634f",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/native_buffer_analyze.py",
+      "bytes": 16457,
+      "sha256": "532055690882291bf36d947243a109928c36fe446a0bc813d29bf4368fa796a8",
+      "original_source_sha256": "532055690882291bf36d947243a109928c36fe446a0bc813d29bf4368fa796a8",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/native_buffer_verify_demo.py",
+      "bytes": 19260,
+      "sha256": "8fd589acf2d3f07ed95f9fb7252ce5433c14ea48b1677a66652cd019e3b300e3",
+      "original_source_sha256": "8fd589acf2d3f07ed95f9fb7252ce5433c14ea48b1677a66652cd019e3b300e3",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/native_stream_analyze.py",
+      "bytes": 28830,
+      "sha256": "01df0666287bc2fd8028eefe8dfc4914118b6e2b2dfd808b8bc65910117762a0",
+      "original_source_sha256": "01df0666287bc2fd8028eefe8dfc4914118b6e2b2dfd808b8bc65910117762a0",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/plot_native_buffer_comparison.py",
+      "bytes": 13430,
+      "sha256": "c7eb1cd93169e9bb48e308c1e4a0402ca4ebfe06b102032317e4426381b4e22e",
+      "original_source_sha256": "c7eb1cd93169e9bb48e308c1e4a0402ca4ebfe06b102032317e4426381b4e22e",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/prepare_dla32_stream_code_backup.py",
+      "bytes": 5527,
+      "sha256": "94837bef2a0d9830d6d1ddf9b125074f528a3b46fcc5e387ec7bae2d60105bd5",
+      "original_source_sha256": "94837bef2a0d9830d6d1ddf9b125074f528a3b46fcc5e387ec7bae2d60105bd5",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/prepare_dla32_stream_overlays.py",
+      "bytes": 2064,
+      "sha256": "d0b9c9478b3c92a704e5aed96a1f4ef0a142a5b5080e75d170c809c83fc3adf7",
+      "original_source_sha256": "d0b9c9478b3c92a704e5aed96a1f4ef0a142a5b5080e75d170c809c83fc3adf7",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/prepare_dla32_winusb_v11.py",
+      "bytes": 3110,
+      "sha256": "c8d95f5052cb51574a504ca2bec10dc2a9a53ef45199c48e545799f0edbf7f61",
+      "original_source_sha256": "c8d95f5052cb51574a504ca2bec10dc2a9a53ef45199c48e545799f0edbf7f61",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/prepare_dla32_worker_v10.py",
+      "bytes": 5434,
+      "sha256": "938a4de08bacc810eb6ac878bbf13ce2d6ec360bb9bd94808e3d869eef4c0644",
+      "original_source_sha256": "938a4de08bacc810eb6ac878bbf13ce2d6ec360bb9bd94808e3d869eef4c0644",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/prepare_dla32_worker_v8.py",
+      "bytes": 4998,
+      "sha256": "fe9d013d261b4a694a742e35049bd7fbd2b1708fcc39744cd1f4dee96c747f30",
+      "original_source_sha256": "fe9d013d261b4a694a742e35049bd7fbd2b1708fcc39744cd1f4dee96c747f30",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/prepare_dla32_worker_v8_continuous.py",
+      "bytes": 2206,
+      "sha256": "ec60ca919b933ee75efbf6b6aa56afe2825cc89865148d40358a3ab6d49c0669",
+      "original_source_sha256": "ec60ca919b933ee75efbf6b6aa56afe2825cc89865148d40358a3ab6d49c0669",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/prepare_dla32_worker_v9.py",
+      "bytes": 5627,
+      "sha256": "b9175aa4e4eff54dadd8e6eee35a3ac500dc18d8e57a1091e2c37fe0b6e2038a",
+      "original_source_sha256": "b9175aa4e4eff54dadd8e6eee35a3ac500dc18d8e57a1091e2c37fe0b6e2038a",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/probe_dla32_native_pipeline.py",
+      "bytes": 14804,
+      "sha256": "9d94ff90db8a30bb19a04ac6c5c1b14b29280490aaac7694d18c9d9672ed0f8d",
+      "original_source_sha256": "9d94ff90db8a30bb19a04ac6c5c1b14b29280490aaac7694d18c9d9672ed0f8d",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/project_dla32_lossless_logic.py",
+      "bytes": 3305,
+      "sha256": "a917f760027abbc3d02100e62499bc03e0b89e80551a9caa81bdaf0ac14871a3",
+      "original_source_sha256": "a917f760027abbc3d02100e62499bc03e0b89e80551a9caa81bdaf0ac14871a3",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/pulseview_native_file_dialog.py",
+      "bytes": 3229,
+      "sha256": "1f6bf4860cf4707f4216c722cf2b49c7474df211b07eb80abf2f45177c509b75",
+      "original_source_sha256": "1f6bf4860cf4707f4216c722cf2b49c7474df211b07eb80abf2f45177c509b75",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/restore_dla32_stream_source.py",
+      "bytes": 1781,
+      "sha256": "2637c64fd8f5a9217d384c28f78b8e7f5b20ee82501b45f84a919b4737f711bc",
+      "original_source_sha256": "2637c64fd8f5a9217d384c28f78b8e7f5b20ee82501b45f84a919b4737f711bc",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/run_dla32_native_pipeline.py",
+      "bytes": 2383,
+      "sha256": "283feef899b7a2a16b98a297c267b306b1d40b177942e79e702d15d45f419b6c",
+      "original_source_sha256": "283feef899b7a2a16b98a297c267b306b1d40b177942e79e702d15d45f419b6c",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/run_dla32_winusb_probe.py",
+      "bytes": 6064,
+      "sha256": "63223565ddf0641ebd286dba75a8c277687237769e0c2933bd2be095dc70ce1a",
+      "original_source_sha256": "63223565ddf0641ebd286dba75a8c277687237769e0c2933bd2be095dc70ce1a",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/run_dla32_winusb_v11.py",
+      "bytes": 6416,
+      "sha256": "6bad4a33146dfecff8a08d5e73b902fec84e7c157bdcfadee9fae72a71d31231",
+      "original_source_sha256": "6bad4a33146dfecff8a08d5e73b902fec84e7c157bdcfadee9fae72a71d31231",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/run_dla32_winusb_v11_continuous.py",
+      "bytes": 3848,
+      "sha256": "1c24bee5dae43392b0485448bc6dfd8d3409f30e8c4b541e52b104ff60928f5b",
+      "original_source_sha256": "1c24bee5dae43392b0485448bc6dfd8d3409f30e8c4b541e52b104ff60928f5b",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/run_dla32_worker_v10.py",
+      "bytes": 6177,
+      "sha256": "c128a029b683bf4ef89660612c128565108fdbc36baba1850d10d3f63e727f7b",
+      "original_source_sha256": "c128a029b683bf4ef89660612c128565108fdbc36baba1850d10d3f63e727f7b",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/run_dla32_worker_v8_benchmark.py",
+      "bytes": 7094,
+      "sha256": "35214302472d07d5bbf34720a3c9ea7218340852c3cb02e058a0ed892d263cd6",
+      "original_source_sha256": "35214302472d07d5bbf34720a3c9ea7218340852c3cb02e058a0ed892d263cd6",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/run_dla32_worker_v8_continuous.py",
+      "bytes": 5265,
+      "sha256": "a51b6194c7af6e085235d0f70fe343dd4738811cec019c9c8d7a68fc83506392",
+      "original_source_sha256": "a51b6194c7af6e085235d0f70fe343dd4738811cec019c9c8d7a68fc83506392",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/run_dla32_worker_v9.py",
+      "bytes": 6176,
+      "sha256": "47fe0ffc9e52a02c2c6bf86e5f05d9ad3d5529021dbb5c21d3aaed00611990c5",
+      "original_source_sha256": "47fe0ffc9e52a02c2c6bf86e5f05d9ad3d5529021dbb5c21d3aaed00611990c5",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/temporary_dla32_winusb.ps1",
+      "bytes": 1339,
+      "sha256": "89c8fe3a9c7410a60180849d45034ae68071ac258b568289311356c2373b03b3",
+      "original_source_sha256": "89c8fe3a9c7410a60180849d45034ae68071ac258b568289311356c2373b03b3",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/test_dla32_native_response.c",
+      "bytes": 2707,
+      "sha256": "2ef3631aa012c60082c597f4969e9e610b083be45c7a5ad5531b46681826d28c",
+      "original_source_sha256": "2ef3631aa012c60082c597f4969e9e610b083be45c7a5ad5531b46681826d28c",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/test_dla32_native_response.sh",
+      "bytes": 1640,
+      "sha256": "6d6426f5eacf808ef60506ab18714fc2b18bbdda277f7a51e18b129b9fdbfffd",
+      "original_source_sha256": "6d6426f5eacf808ef60506ab18714fc2b18bbdda277f7a51e18b129b9fdbfffd",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/test_dla32_winusb_continuous.c",
+      "bytes": 8248,
+      "sha256": "b7f5712273664bf8ca94a4959285c6b6295d25e8738c10b9b7e9e97b6c487a0c",
+      "original_source_sha256": "b7f5712273664bf8ca94a4959285c6b6295d25e8738c10b9b7e9e97b6c487a0c",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/test_dla32_winusb_continuous_r2.c",
+      "bytes": 8248,
+      "sha256": "8c377f9bc95849bfa121b3392bbc5272c2e31c4d5ca82c3b1c584c02fea1c7e1",
+      "original_source_sha256": "8c377f9bc95849bfa121b3392bbc5272c2e31c4d5ca82c3b1c584c02fea1c7e1",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/test_dla32_winusb_v11.c",
+      "bytes": 2890,
+      "sha256": "e886cc92103c3a144a29ebf0d9a93f08be9e9e877806ea07dac586578b542b44",
+      "original_source_sha256": "e886cc92103c3a144a29ebf0d9a93f08be9e9e877806ea07dac586578b542b44",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/test_dla32_worker_v8_continuous.c",
+      "bytes": 7834,
+      "sha256": "715a06f6844cb122ba352c09d06d48787313282425329ab815840d6fccbdf42b",
+      "original_source_sha256": "715a06f6844cb122ba352c09d06d48787313282425329ab815840d6fccbdf42b",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/test_dla32_worker_v8_ring.c",
+      "bytes": 2779,
+      "sha256": "603ff5b8024e6762a3eb86adeb424354df566b2cf936f1f0951bf99d902769da",
+      "original_source_sha256": "603ff5b8024e6762a3eb86adeb424354df566b2cf936f1f0951bf99d902769da",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/test_dla32_worker_v9_r2.sh",
+      "bytes": 2030,
+      "sha256": "bc6e9ac36877cc491f363b9f46cc912cee07aaa7f968d65dbd5ede4c87bd78fc",
+      "original_source_sha256": "bc6e9ac36877cc491f363b9f46cc912cee07aaa7f968d65dbd5ede4c87bd78fc",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/test_dla32_worker_v9_r3.sh",
+      "bytes": 2030,
+      "sha256": "ce292b88728dc996390d5a3ab3131b5bf5ecee623168c6d108fec0436b500675",
+      "original_source_sha256": "ce292b88728dc996390d5a3ab3131b5bf5ecee623168c6d108fec0436b500675",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/test_dla32_worker_v9_upload.c",
+      "bytes": 5301,
+      "sha256": "ecdcd1606c9e41757922166ec339f44c6caa39932857e263a7cd6be4a5c0c5e3",
+      "original_source_sha256": "ecdcd1606c9e41757922166ec339f44c6caa39932857e263a7cd6be4a5c0c5e3",
+      "fixture_include_made_relative": false
+    },
+    {
+      "path": "tools/validate_dla32_stream_backup.sh",
+      "bytes": 1067,
+      "sha256": "49d76ed7ba123be819c7031eee7bf67d137652494ed2e3696345ee0f5eeb58ac",
+      "original_source_sha256": "49d76ed7ba123be819c7031eee7bf67d137652494ed2e3696345ee0f5eeb58ac",
+      "fixture_include_made_relative": false
+    }
+  ],
+  "captures_private_notes_vendor_materials_copied": false,
+  "existing_encrypted_notes_archive_changed": false,
+  "driver_packages_copied": false
+}

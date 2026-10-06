@@ -107,3 +107,21 @@ byte against the full original binary; exporter exit status alone is insufficien
 ## Backup limitations
 
 This backup preserves the selected development code and notes. RAW data, `.sr` captures, measurement exports, logs, screenshots, reports prepared for FNIRSI, and binary packages remain exclusively in the original local directory. They cannot be restored from this repository.
+
+
+## Stream transport profiles V8–V11
+
+Restore the archived V5 base first using the existing instructions, then choose
+the required overlay. The destination must be new and inside the repository:
+
+```powershell
+python -B tools/restore_dla32_stream_source.py --profile v11 --destination artifacts/dla32-winusb-v11-source/libsigrok
+```
+
+The restorer verifies every base file, every overlay byte and the full 490-file
+result. V8 is SDK0; V9 is opt-in kernel upload; V10 adds native sample reads;
+V11 keeps the V7 r2 WCH lifecycle and corrects libusb command/model endpoints.
+These are separate experiments, not a stable release. Source fixtures have
+relative includes; workstation build/runners still require their documented
+MSYS2 paths, installed SDK and newly generated acceptance evidence. Hardware
+runners do not qualify arbitrary rebuilt DLLs automatically.

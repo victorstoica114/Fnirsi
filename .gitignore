@@ -66,3 +66,14 @@
 /artifacts/dla32-wch-worker-v7-recipe-check/
 /FIABILITATE_WCH_WORKER_*.md
 *.log
+
+# Transport experiment source restoration and local runtime outputs.
+/artifacts/dla32-wch-worker-v8-source/
+/artifacts/dla32-wch-worker-v9-source/
+/artifacts/dla32-wch-worker-v10-source/
+/artifacts/dla32-wch-worker-v8-*/offline-validation.json
+/artifacts/dla32-wch-worker-v9-*/offline-validation.json
+/artifacts/dla32-wch-worker-v10-*/offline-validation.json
+/artifacts/dla32-winusb-v11-source/
+/artifacts/dla32-winusb-v11/
+/TRANSPORT_STREAM50_*.md
