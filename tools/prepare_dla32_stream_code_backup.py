@@ -42,7 +42,7 @@ def main():
     readme=target/'README.md';text=readme.read_text()
     text=text.replace('Current development backup:', 'Previous development backup:',1)
     text=text.replace('# FNIRSI DLA-32 Plus in PulseView\n',
-        '# FNIRSI DLA-32 Plus in PulseView\n\nCurrent investigation: [Stream transport V8–V11](STREAM_TRANSPORT_STATUS.md). The WCH paths tested remain below 200 MB/s; the corrected WinUSB command path is prepared and awaits hardware validation. This branch preserves experiments and software tests.\n',1)
+        '# FNIRSI DLA-32 Plus in PulseView\n\nCurrent investigation: [Stream transport V8–V11](STREAM_TRANSPORT_STATUS.md). The WCH paths tested remain below 200 MB/s; the experimental WinUSB command path awaits hardware validation. This branch preserves experiments and software tests.\n',1)
     readme.write_text(text,newline='\n')
     build=target/'BUILD_AND_RESTORE.md'
     with build.open('a',encoding='utf-8',newline='\n') as stream:
@@ -59,7 +59,9 @@ python -B tools/restore_dla32_stream_source.py --profile v11 --destination artif
 
 The restorer verifies every base file, every overlay byte and the full 490-file
 result. V8 is SDK0; V9 is opt-in kernel upload; V10 adds native sample reads;
-V11 keeps the V7 r2 WCH lifecycle and corrects libusb command/model endpoints.
+V11 keeps the V7 r2 WCH lifecycle and experiments with libusb OUT1/model
+endpoints. Endpoint choice still requires hardware verification against the
+earlier successful WCH command transfers on OUT2.
 These are separate experiments, not a stable release. Source fixtures have
 relative includes; workstation build/runners still require their documented
 MSYS2 paths, installed SDK and newly generated acceptance evidence. Hardware

@@ -2,23 +2,23 @@
   "source_files": [
     {
       "path": ".gitignore",
-      "bytes": 1873,
-      "sha256": "f3412d361e9a49662c7d17791839704628a747ed83be01ab2c2fff8fc413a0a9"
+      "bytes": 2019,
+      "sha256": "24b4635029d5c240c759d1421fed061898ba4bfa97e312421c6e5f36f95eaf6d"
     },
     {
       "path": "BUILD_AND_RESTORE.md",
-      "bytes": 7779,
-      "sha256": "b239a94fd0db3da88debf18825c0e697ba87fdd3ac9b2545dfd5bc9d9a661e00"
+      "bytes": 7899,
+      "sha256": "024768cf9aa034a053ed0922de2ac4fb523ff2704832960106377b0196f01d78"
     },
     {
       "path": "README.md",
-      "bytes": 5128,
-      "sha256": "62a079058bd0a93c6c1d832a9cc8d0f10adc0679ff885eb8d3ed1b1792140781"
+      "bytes": 5117,
+      "sha256": "bbd6e128a00c0a5f4a76fa938728f14768772b20b185270041d4a68a503be4eb"
     },
     {
       "path": "STREAM_TRANSPORT_STATUS.md",
-      "bytes": 3484,
-      "sha256": "741010cf7d9ff0993ea5e02700e11b615df001bd246bd94cb3f1477c78da8aac"
+      "bytes": 4218,
+      "sha256": "6d246c00425a33d4136e3010ab1c89c453c1ea92b0144fd5eb4ac0a436ebc47e"
     },
     {
       "path": "artifacts/dla32-stream-source-overlays/v10/api.c",
@@ -364,6 +364,13 @@
       "fixture_include_made_relative": false
     },
     {
+      "path": "tools/native_bins_to_logic8.c",
+      "bytes": 4099,
+      "sha256": "e9ed8588e7fdf296b70f3f87f27c6ff2380caa50abaa3e9b7ece9968f5d6df15",
+      "original_source_sha256": "e9ed8588e7fdf296b70f3f87f27c6ff2380caa50abaa3e9b7ece9968f5d6df15",
+      "fixture_include_made_relative": false
+    },
+    {
       "path": "tools/native_buffer_analyze.py",
       "bytes": 16457,
       "sha256": "532055690882291bf36d947243a109928c36fe446a0bc813d29bf4368fa796a8",
@@ -393,9 +400,9 @@
     },
     {
       "path": "tools/prepare_dla32_stream_code_backup.py",
-      "bytes": 5527,
-      "sha256": "94837bef2a0d9830d6d1ddf9b125074f528a3b46fcc5e387ec7bae2d60105bd5",
-      "original_source_sha256": "94837bef2a0d9830d6d1ddf9b125074f528a3b46fcc5e387ec7bae2d60105bd5",
+      "bytes": 5634,
+      "sha256": "ee1072d3e46c28a4162b6c4325b9ccfa5ebf3d504cc2ad8bf523587502262a7b",
+      "original_source_sha256": "ee1072d3e46c28a4162b6c4325b9ccfa5ebf3d504cc2ad8bf523587502262a7b",
       "fixture_include_made_relative": false
     },
     {

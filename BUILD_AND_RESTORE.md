@@ -120,7 +120,9 @@ python -B tools/restore_dla32_stream_source.py --profile v11 --destination artif
 
 The restorer verifies every base file, every overlay byte and the full 490-file
 result. V8 is SDK0; V9 is opt-in kernel upload; V10 adds native sample reads;
-V11 keeps the V7 r2 WCH lifecycle and corrects libusb command/model endpoints.
+V11 keeps the V7 r2 WCH lifecycle and experiments with libusb OUT1/model
+endpoints. Endpoint choice still requires hardware verification against the
+earlier successful WCH command transfers on OUT2.
 These are separate experiments, not a stable release. Source fixtures have
 relative includes; workstation build/runners still require their documented
 MSYS2 paths, installed SDK and newly generated acceptance evidence. Hardware

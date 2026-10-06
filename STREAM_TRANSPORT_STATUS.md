@@ -39,17 +39,28 @@ fixture and the finite interval, not a sustained lossless Stream verdict or
 complete SPI/I2C receiver validation.
 
 The device advertises the Microsoft WinUSB compatible ID. A temporary test
-with the existing signed Microsoft driver found a concrete libusb command-path
-bug: capture commands used OUT endpoint `0x02`; the verified WCH command path
-uses `0x01`. V11 corrects this endpoint and requires a fresh DL32 identification
-through OUT1/IN2. Software verification passes 206 WCH lifecycle checks,
-13 endpoint/model checks and 92 general checks. The corrected WinUSB hardware
-capture remains pending; the original WCH binding is restored.
+with the existing signed Microsoft driver returned PIPE on OUT endpoint
+`0x02`. That failure does not establish that the endpoint is wrong: earlier
+ETW header correlations map successful WCH command writes to OUT `0x02`.
+V11 experiments with OUT `0x01` and fresh DL32 identification through OUT1/IN2.
+Software verification passes 206 WCH lifecycle checks, 13 endpoint/model
+checks and 92 general checks, but those tests do not establish which endpoint
+the hardware accepts. V11 remains an unvalidated experiment; its endpoint
+change must not be promoted as a verified correction. The WCH binding is restored.
 
-No firmware fault is established by these results. The next hardware gate is
-the corrected WinUSB path, followed by long captures, CRC/counter checks,
-original-byte verification and Stop/recovery tests. Kernel upload retirement
-can discard an unknown final kernel tail; this limitation is reported explicitly.
+No firmware fault is established by these results. The next comparison is a
+long native FNIRSI Stream capture under the same 32-channel/50 MS/s conditions,
+with packet CRC/counter validation. Native sustained 200 MB/s has not been
+measured. The software USB restart and exact-port reenumeration completed,
+but fresh DL32 identification still fails; native acquisition has not started.
+Device communication must recover before native or WinUSB hardware tests.
+Kernel upload retirement can discard an unknown final kernel tail; this
+limitation is reported explicitly.
+
+The offline native BIN converter preserves physical D0–D7 ordering and LSB-first
+time order. It passed 16,777,216 independent sample-byte checks, file-boundary
+and overwrite checks, and an exact five-million-sample comparison with an old
+native CSV. These verify export conversion, not throughput or current hardware.
 
 Source profiles V8–V11 are preserved as small overlays over the archived V5
 base. Restore and verify all 490 files with `tools/restore_dla32_stream_source.py`.

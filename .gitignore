@@ -77,3 +77,7 @@
 /artifacts/dla32-winusb-v11-source/
 /artifacts/dla32-winusb-v11/
 /TRANSPORT_STREAM50_*.md
+
+# Native comparison private journal and local conversion fixtures.
+/COMPARATIE_STREAM_NATIV_*.md
+/artifacts/native-bin-conversion-offline-tests/
