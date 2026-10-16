@@ -1,2 +1,17 @@
 # Preserve the original source bytes in this backup.
 * -text
+
+# Files executed or parsed by POSIX tools must keep LF endings so Linux
+# builds work from a fresh checkout. These override "-text" above.
+*.sh            text eol=lf
+*.ac            text eol=lf
+*.am            text eol=lf
+*.m4            text eol=lf
+*.in            text eol=lf
+configure       text eol=lf
+CMakeLists.txt  text eol=lf
+*.cmake         text eol=lf
+autostuff/*     text eol=lf
+
+# Frozen snapshots keep their original bytes.
+artifacts/**   -text

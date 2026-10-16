@@ -338,6 +338,9 @@ ATTRS{idVendor}=="128d", ATTRS{idProduct}=="0003", ENV{ID_SIGROK}="1"
 # UNI-T UT325
 ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="e008", ENV{ID_SIGROK}="1"
 
+# FNIRSI DLA-16 / DLA-32 (shared WCH USB3 VID:PID)
+ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="5537", ENV{ID_SIGROK}="1"
+
 # V&A VA4000 multimeter cable (for various V&A DMMs)
 ATTRS{idVendor}=="04fc", ATTRS{idProduct}=="0201", ENV{ID_SIGROK}="1"
 

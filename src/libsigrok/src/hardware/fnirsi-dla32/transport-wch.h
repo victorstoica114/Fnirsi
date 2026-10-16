@@ -24,32 +24,58 @@ static struct {
     BOOL (WINAPI *timeout_ex)(ULONG, ULONG, ULONG, ULONG, ULONG);
 } wch_api;
 
+static HMODULE dla_wch_try(const char *path, DWORD flags)
+{
+    gunichar2 *wide_path = g_utf8_to_utf16(path, -1, NULL, NULL, NULL);
+    HMODULE module = wide_path ?
+        LoadLibraryExW((LPCWSTR)wide_path, NULL, flags) : NULL;
+
+    g_free(wide_path);
+    if (module)
+        sr_dbg("Loaded WCH runtime from %s.", path);
+    return module;
+}
+
 static gboolean dla_wch_load(void)
 {
+    const DWORD flags = LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR |
+        LOAD_LIBRARY_SEARCH_DEFAULT_DIRS;
     const char *override = g_getenv("FNIRSI_WCH_DLL");
     const char *program_files = g_getenv("ProgramW6432");
     char *path;
-    gunichar2 *wide_path;
 
     if (wch_api.module)
         return TRUE;
-    if (!program_files)
-        program_files = "C:\\Program Files";
-    path = override ? g_strdup(override) : g_build_filename(program_files,
-        "FNIRSI", "DLA Logic", "CH375DLL64.dll", NULL);
-    if (!g_path_is_absolute(path)) {
-        sr_err("FNIRSI_WCH_DLL must name an absolute DLL path.");
+    if (override) {
+        if (!g_path_is_absolute(override)) {
+            sr_err("FNIRSI_WCH_DLL must name an absolute DLL path.");
+            return FALSE;
+        }
+        wch_api.module = dla_wch_try(override, flags);
+    } else {
+        if (!program_files)
+            program_files = "C:\\Program Files";
+        /* The vendor application installs to "DLA_Logic"; older
+         * packages used "FNIRSI\DLA Logic". */
+        path = g_build_filename(program_files, "DLA_Logic",
+            "CH375DLL64.dll", NULL);
+        wch_api.module = dla_wch_try(path, flags);
         g_free(path);
+        if (!wch_api.module) {
+            path = g_build_filename(program_files, "FNIRSI", "DLA Logic",
+                "CH375DLL64.dll", NULL);
+            wch_api.module = dla_wch_try(path, flags);
+            g_free(path);
+        }
+        /* The WCH driver package also installs it in System32. */
+        if (!wch_api.module)
+            wch_api.module = dla_wch_try("CH375DLL64.dll",
+                LOAD_LIBRARY_SEARCH_SYSTEM32);
+    }
+    if (!wch_api.module) {
+        sr_err("Cannot load CH375DLL64.dll; set FNIRSI_WCH_DLL to its path.");
         return FALSE;
     }
-    wide_path = g_utf8_to_utf16(path, -1, NULL, NULL, NULL);
-    if (wide_path)
-        wch_api.module = LoadLibraryExW((LPCWSTR)wide_path, NULL,
-            LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
-    g_free(wide_path);
-    g_free(path);
-    if (!wch_api.module)
-        return FALSE;
 #define WCH_LOAD(field, symbol) do { \
     FARPROC address = GetProcAddress(wch_api.module, symbol); \
     G_STATIC_ASSERT(sizeof(wch_api.field) == sizeof(address)); \

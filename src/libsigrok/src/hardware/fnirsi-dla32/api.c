@@ -15,19 +15,42 @@
 #include "protocol.h"
 
 #define LOG_PREFIX "fnirsi-dla32"
-#define NUM_TRANSFERS 8
-#define TRANSFER_SIZE (1024 * 1024)
+/* The vendor application reads in 4 MiB transfers; eight 1 MiB transfers
+ * led to USB transfer errors that wedged the device on SuperSpeed. Linux
+ * limits usbfs buffers to 16 MiB per process by default, so queue three. */
+#define NUM_TRANSFERS 3
+#define TRANSFER_SIZE (4 * 1024 * 1024)
 #define TRANSFER_TIMEOUT_MS 1000
 #define USB_POLL_MS 10
 #define WCH_POLL_MS 1
 #define BUFFER_MEMORY_BITS (UINT64_C(4) * 1024 * 1024 * 1024)
 #define DEFAULT_LIMIT_SAMPLES 50000
 #define LOGIC_ONLY_MAX_LIMIT_SAMPLES UINT64_C(100000000)
+/* Stream has no memory limit, but frontends build sample-count lists up to
+ * the advertised maximum (PulseView loops forever on UINT64_MAX). */
+#define STREAM_MAX_LIMIT_SAMPLES UINT64_C(1000000000000)
 #define CONTINUOUS_WINDOW_MSEC 1000
 #define STOP_DRAIN_USEC (3 * G_TIME_SPAN_SECOND)
 #define STOP_DRAIN_BYTES (UINT64_C(64) * 1024 * 1024)
 #define STOP_EMPTY_READS 2
+/* After STOP the device ignores a SETUP sent within ~60 ms, and a capture
+ * armed within ~400 ms may start with samples left over from the previous
+ * one (seen after sample rate changes). */
+#define STOP_SETTLE_USEC (800 * 1000)
+/* Switching between Buffer and Stream needs longer. Also used for the first
+ * acquisition, when the previous mode is unknown. */
+#define MODE_SETTLE_USEC (2 * G_TIME_SPAN_SECOND)
+/* Delay between SETUP and ARM used by the vendor application. */
+#define SETUP_ARM_USEC (100 * 1000)
+#define SETUP_REPEAT_USEC (20 * 1000)
+#define STOP_REPLY_SIZE 512
+#define STOP_REPLY_TIMEOUT_MS 250
 #define DATA_STALL_USEC (3 * G_TIME_SPAN_SECOND)
+/* Minimum silence before giving up on the end of a Buffer upload. */
+#define UPLOAD_TAIL_USEC (200 * 1000)
+#define BUFFER_SKIP_BYTES 4096
+/* Re-arm once if no data arrives this long after the capture should end. */
+#define REARM_USEC G_TIME_SPAN_SECOND
 
 #include "transport-wch.h"
 
@@ -47,6 +70,15 @@ struct dev_context {
 	uint64_t samplerate;
 	int threshold;
 	gboolean stream, continuous, usb3, logic_only;
+	gboolean upload_tail;
+	size_t skip_bytes;
+	uint8_t setup_cmd[DLA_COMMAND_SIZE], arm_cmd[DLA_COMMAND_SIZE];
+	gboolean rearmed, have_history, last_stream;
+	/* Trigger marker placement (Buffer mode). */
+	unsigned int trig_ch, trig_cond;
+	gboolean trig_sent, trig_prev;
+	int64_t trig_expect, trig_window, trig_best;
+	int64_t rearm_after_us;
 	struct pwm_setting pwm[4];
 	struct dla_decoder decoder;
 	uint32_t channel_mask;
@@ -78,7 +110,7 @@ static const uint32_t devopts[] = {
 	SR_CONF_LIMIT_MSEC | SR_CONF_GET | SR_CONF_SET,
 	SR_CONF_SAMPLERATE | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
 	SR_CONF_VOLTAGE_THRESHOLD | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
-	SR_CONF_DEVICE_MODE | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
+	SR_CONF_DATA_SOURCE | SR_CONF_GET | SR_CONF_SET | SR_CONF_LIST,
 	SR_CONF_CONTINUOUS | SR_CONF_GET | SR_CONF_SET,
 	SR_CONF_TRIGGER_MATCH | SR_CONF_LIST,
 	SR_CONF_CONN | SR_CONF_GET,
@@ -108,9 +140,13 @@ static const int32_t trigger_matches[] = {
 	SR_TRIGGER_FALLING, SR_TRIGGER_EDGE,
 };
 
+/* PWM outputs are hidden by default (logic-only profile). Set SR_DLA32_PWM=1
+ * to expose PWM0..PWM3 channel groups, e.g. for loopback testing. */
 static gboolean logic_only_profile(void)
 {
-	return TRUE;
+	const char *pwm = g_getenv("SR_DLA32_PWM");
+
+	return !(pwm && *pwm && strcmp(pwm, "0"));
 }
 
 static uint32_t enabled_channel_mask(const struct sr_dev_inst *sdi)
@@ -164,7 +200,7 @@ static uint64_t maximum_samples(const struct dev_context *devc,
 	struct dla_decoder decoder;
 
 	if (devc->stream)
-		return UINT64_MAX;
+		return STREAM_MAX_LIMIT_SAMPLES;
 	if (dla_decoder_init(&decoder, mask, FALSE) < 0)
 		return 0;
 	return BUFFER_MEMORY_BITS / decoder.wire_channels;
@@ -392,6 +428,28 @@ static int send_command(const struct sr_dev_inst *sdi, const uint8_t *packet)
 		return SR_ERR_IO;
 	}
 	return SR_OK;
+}
+
+/* The device answers STOP with a 512-byte status block on EP 0x82. The vendor
+ * application always reads it; leaving it unread makes later acquisitions
+ * stall and can wedge the firmware.
+ */
+static void read_stop_reply(const struct sr_dev_inst *sdi)
+{
+	struct sr_usb_dev_inst *usb = sdi->conn;
+	uint8_t reply[STOP_REPLY_SIZE];
+	int count = 0, ret;
+
+#ifdef _WIN32
+	if (((struct dev_context *)sdi->priv)->use_wch)
+		return;
+#endif
+	ret = libusb_bulk_transfer(usb->devhdl, 0x82, reply, sizeof(reply),
+		&count, STOP_REPLY_TIMEOUT_MS);
+	if (ret)
+		sr_warn("No STOP reply: %s.", libusb_error_name(ret));
+	else
+		sr_dbg("STOP reply: %d bytes.", count);
 }
 
 static int send_pwm_config(const struct sr_dev_inst *sdi, unsigned int index,
@@ -771,12 +829,15 @@ static void finish_acquisition(struct sr_dev_inst *sdi)
 	devc->submitted_transfers = 0;
 	devc->pending = 0;
 	devc->run_limit_samples = 0;
+	devc->have_history = TRUE;
+	devc->last_stream = devc->stream;
 	devc->acquiring = FALSE;
 	devc->starting = FALSE;
 	devc->stopping = FALSE;
 	devc->stop_sent = FALSE;
 	devc->cancel_requested = FALSE;
 	devc->data_started = FALSE;
+	devc->upload_tail = FALSE;
 	if (devc->header_sent) {
 		devc->header_sent = FALSE;
 		ret = std_session_send_df_end(sdi);
@@ -826,12 +887,47 @@ static void note_data_progress(struct dev_context *devc)
 	devc->last_data_us = g_get_monotonic_time();
 }
 
-static void check_data_progress(struct dev_context *devc)
+/* The device occasionally ignores SETUP/ARM and then applies the stale
+ * SETUP to the next acquisition. Stop and resend both once. */
+static void rearm_acquisition(const struct sr_dev_inst *sdi)
 {
+	struct dev_context *devc = sdi->priv;
+	uint8_t packet[DLA_COMMAND_SIZE];
+
+	sr_warn("No data from the device; re-arming the acquisition.");
+	devc->rearmed = TRUE;
+	dla_stop(packet);
+	if (send_command(sdi, packet) == SR_OK)
+		read_stop_reply(sdi);
+	g_usleep(STOP_SETTLE_USEC);
+	if (send_command(sdi, devc->setup_cmd) == SR_OK) {
+		g_usleep(SETUP_ARM_USEC);
+		send_command(sdi, devc->arm_cmd);
+	}
+	devc->last_data_us = g_get_monotonic_time();
+}
+
+static void check_data_progress(const struct sr_dev_inst *sdi)
+{
+	struct dev_context *devc = sdi->priv;
 	int64_t timeout;
 
 	if (devc->stopping || (!devc->data_started && devc->has_trigger))
 		return;
+	if (devc->upload_tail) {
+		/* At low rates the device uploads at roughly the sample rate, so
+		 * allow twice the time needed to fill one transfer. */
+		int64_t fill_us = (int64_t)(TRANSFER_SIZE * 8 / devc->decoder.wire_channels) *
+			G_USEC_PER_SEC / devc->samplerate;
+		if (g_get_monotonic_time() - devc->last_data_us > MAX(UPLOAD_TAIL_USEC, 2 * fill_us))
+			request_stop(devc);
+		return;
+	}
+	if (!devc->limits.samples_read && !devc->rearmed &&
+			g_get_monotonic_time() - devc->last_data_us > devc->rearm_after_us) {
+		rearm_acquisition(sdi);
+		return;
+	}
 	timeout = devc->data_started ? DATA_STALL_USEC : devc->first_data_timeout_us;
 	if (g_get_monotonic_time() - devc->last_data_us <= timeout)
 		return;
@@ -856,16 +952,85 @@ static int resubmit_transfer(struct libusb_transfer *transfer)
 	return SR_ERR_IO;
 }
 
-static uint64_t decode_transfer(struct sr_dev_inst *sdi,
-	const uint8_t *input, size_t length)
+static gboolean sample_bit(const struct dev_context *devc, uint64_t i)
+{
+	unsigned int ch = devc->trig_ch;
+
+	return (devc->decoded[i * devc->decoder.unitsize + ch / 8] >> (ch % 8)) & 1;
+}
+
+/* The device places the trigger at a fixed fraction of its capture, but
+ * the stale lead-in that is skipped varies, so the exact sample moves by a
+ * few hundred samples. Find the matching transition closest to the
+ * expected position. Returns its index within this chunk, or -1. */
+static int64_t locate_trigger(struct dev_context *devc, uint64_t first,
+	uint64_t count)
+{
+	int64_t lo = devc->trig_expect - devc->trig_window;
+	int64_t hi = devc->trig_expect + devc->trig_window;
+	int64_t g, at;
+	uint64_t i;
+	gboolean cur, prev = devc->trig_prev, match;
+
+	for (i = 0; i < count; i++, prev = cur) {
+		cur = sample_bit(devc, i);
+		g = first + i;
+		if (g < lo || g > hi)
+			continue;
+		/* Level triggers can fire without an edge; they use the
+		 * expected position. */
+		switch (devc->trig_cond) {
+		case 1: match = !prev && cur; break;	/* rising */
+		case 3: match = prev && !cur; break;	/* falling */
+		case 5: match = prev != cur; break;	/* either edge */
+		default: match = FALSE; break;
+		}
+		if (match && (devc->trig_best < 0 ||
+				ABS(g - devc->trig_expect) < ABS(devc->trig_best - devc->trig_expect)))
+			devc->trig_best = g;
+	}
+	devc->trig_prev = count ? sample_bit(devc, count - 1) : devc->trig_prev;
+	if ((int64_t)(first + count) <= hi)
+		return -1;
+	at = (devc->trig_best >= 0 ? devc->trig_best : devc->trig_expect) - first;
+	return CLAMP(at, 0, (int64_t)count);
+}
+
+static int send_logic(struct sr_dev_inst *sdi, uint64_t offset, uint64_t count)
 {
 	struct dev_context *devc = sdi->priv;
 	struct sr_datafeed_logic logic;
 	struct sr_datafeed_packet packet;
+
+	if (!count)
+		return SR_OK;
+	logic.length = count * devc->decoder.unitsize;
+	logic.unitsize = devc->decoder.unitsize;
+	logic.data = devc->decoded + offset * devc->decoder.unitsize;
+	packet.type = SR_DF_LOGIC;
+	packet.payload = &logic;
+	return sr_session_send(sdi, &packet);
+}
+
+static uint64_t decode_transfer(struct sr_dev_inst *sdi,
+	const uint8_t *input, size_t length)
+{
+	struct dev_context *devc = sdi->priv;
+	struct sr_datafeed_packet packet;
 	size_t produced;
-	uint64_t samples, remaining;
+	uint64_t samples, remaining, split;
+	int64_t at = -1;
 	int ret;
 
+	if (devc->skip_bytes) {
+		size_t skip = MIN(devc->skip_bytes, length);
+
+		devc->skip_bytes -= skip;
+		input += skip;
+		length -= skip;
+		if (!length)
+			return 0;
+	}
 	if (dla_decode_feed(&devc->decoder, devc->wire_tail, &devc->pending,
 		devc->decoded, devc->decoded_size, input, length, &produced) < 0) {
 		sr_err("Invalid USB frame state or insufficient decode buffer.");
@@ -881,12 +1046,21 @@ static uint64_t decode_transfer(struct sr_dev_inst *sdi,
 	}
 	if (!samples)
 		return 0;
-	logic.length = samples * devc->decoder.unitsize;
-	logic.unitsize = devc->decoder.unitsize;
-	logic.data = devc->decoded;
-	packet.type = SR_DF_LOGIC;
-	packet.payload = &logic;
-	ret = sr_session_send(sdi, &packet);
+	split = samples;
+	if (devc->has_trigger && !devc->stream && !devc->trig_sent) {
+		at = locate_trigger(devc, devc->limits.samples_read, samples);
+		if (at >= 0)
+			split = at;
+	}
+	ret = send_logic(sdi, 0, split);
+	if (ret == SR_OK && at >= 0) {
+		devc->trig_sent = TRUE;
+		packet.type = SR_DF_TRIGGER;
+		packet.payload = NULL;
+		ret = sr_session_send(sdi, &packet);
+	}
+	if (ret == SR_OK)
+		ret = send_logic(sdi, split, samples - split);
 	if (ret != SR_OK) {
 		sr_err("Failed to deliver acquisition samples: %s.", sr_strerror(ret));
 		request_stop(devc);
@@ -917,7 +1091,24 @@ static void LIBUSB_CALL receive_transfer(struct libusb_transfer *transfer)
 	}
 	if (transfer->actual_length > 0) {
 		note_data_progress(devc);
-		decode_transfer(sdi, transfer->buffer, transfer->actual_length);
+		if (!devc->upload_tail)
+			decode_transfer(sdi, transfer->buffer, transfer->actual_length);
+	}
+	/* In Buffer mode the device uploads more than was requested and ends
+	 * the upload with a short packet. Read and discard the rest before STOP,
+	 * as the vendor application does; stopping mid-upload corrupts or
+	 * wedges later acquisitions.
+	 */
+	if (!devc->stopping && !devc->stream && devc->run_limit_samples &&
+			devc->limits.samples_read >= devc->run_limit_samples) {
+		devc->upload_tail = TRUE;
+		if (transfer->actual_length < transfer->length) {
+			request_stop(devc);
+			retire_transfer(transfer);
+			return;
+		}
+		resubmit_transfer(transfer);
+		return;
 	}
 	if (devc->stopping ||
 			(devc->run_limit_samples &&
@@ -991,6 +1182,8 @@ static void begin_ordered_stop(const struct sr_dev_inst *sdi)
 	devc->stop_sent = TRUE;
 	if (send_command(sdi, packet) != SR_OK)
 		sr_err("Failed to send the acquisition stop command.");
+	else
+		read_stop_reply(sdi);
 }
 
 static void rollback_acquisition(struct sr_dev_inst *sdi)
@@ -1060,7 +1253,7 @@ static int receive_events(int fd, int revents, void *cb_data)
 			if (!count)
 				break;
 		}
-		check_data_progress(devc);
+		check_data_progress(sdi);
 		begin_ordered_stop(sdi);
 		if (devc->stopping) {
 			drain_stopped_endpoint(sdi);
@@ -1075,7 +1268,7 @@ static int receive_events(int fd, int revents, void *cb_data)
 		sr_err("Failed to service USB events: %s.", libusb_error_name(ret));
 		request_stop(devc);
 	}
-	check_data_progress(devc);
+	check_data_progress(sdi);
 	begin_ordered_stop(sdi);
 	if (devc->stopping && devc->stop_sent && !devc->submitted_transfers) {
 		drain_stopped_endpoint(sdi);
@@ -1131,6 +1324,8 @@ static int prepare_trigger(const struct sr_dev_inst *sdi,
 		return SR_ERR_NA;
 	}
 	conditions[match->channel->index] = condition;
+	((struct dev_context *)sdi->priv)->trig_ch = match->channel->index;
+	((struct dev_context *)sdi->priv)->trig_cond = condition;
 	return SR_OK;
 }
 
@@ -1199,7 +1394,7 @@ static void configure_setup(struct dla_setup_config *setup,
 	setup->samplerate_index = samplerate_index(devc->samplerate);
 	setup->threshold = threshold_cv[devc->threshold];
 	setup->threshold_range = threshold_range[devc->threshold];
-	setup->interval_ms = 3;
+	setup->interval_ms = 1;
 	setup->buffer = !devc->stream;
 	setup->mode = devc->continuous ? 3 : 0;
 	if (devc->continuous) {
@@ -1214,12 +1409,7 @@ static void configure_setup(struct dla_setup_config *setup,
 	}
 	setup->duration_ms = MIN(milliseconds, UINT16_MAX);
 	setup->duration_index = duration_index(milliseconds);
-	setup->trigger_position = has_trigger ? 500 : 0;
-}
-
-static void wait_before_arm(gboolean legacy_path)
-{
-	g_usleep(legacy_path ? 10000 : 100000);
+	setup->trigger_position = has_trigger ? 500 : 10;
 }
 
 static int prepare_transfers(struct sr_dev_inst *sdi)
@@ -1272,7 +1462,7 @@ static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 	uint32_t mask;
 	int count, ret, i;
 	int64_t drain_deadline;
-	gboolean has_trigger, legacy_path;
+	gboolean has_trigger, stale = FALSE;
 
 	if (devc->acquiring || devc->source_added || devc->submitted_transfers)
 		return SR_ERR;
@@ -1302,21 +1492,18 @@ static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 		return ret;
 	if (dla_decoder_init(&devc->decoder, mask, devc->stream) < 0)
 		return SR_ERR_ARG;
+	/* A Buffer upload can start with up to 3 KiB left over from the previous
+	 * capture (seen after long captures, e.g. 1M samples at 2 MHz). Drop the
+	 * first 4 KiB; the device uploads more than requested, so the sample
+	 * count is unaffected. */
+	devc->skip_bytes = devc->stream ? 0 : BUFFER_SKIP_BYTES;
 	devc->channel_mask = mask;
 	devc->run_limit_samples = devc->continuous ? 0 : samples;
-	legacy_path = !devc->stream && mask == UINT32_MAX &&
-		devc->samplerate == SR_MHZ(50) && !has_trigger &&
-		!devc->limits.limit_msec && samples <= 500000;
 	ret = prepare_transfers((struct sr_dev_inst *)sdi);
 	if (ret != SR_OK)
 		return ret;
 
-	/* Stop and drain stale data before arming the new asynchronous queue. */
-	dla_stop(packet);
-	if (send_command(sdi, packet) != SR_OK) {
-		free_prepared_transfers(devc);
-		return SR_ERR_IO;
-	}
+	/* Drain stale data before arming the new asynchronous queue. */
 	drain_deadline = g_get_monotonic_time() + STOP_DRAIN_USEC;
 	for (i = 0; i < 64; i++) {
 		count = 0;
@@ -1328,6 +1515,7 @@ static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 		sr_dbg("Pre-arm drain %d: status %d, %d bytes.", i, ret, count);
 		if ((ret == LIBUSB_SUCCESS || ret == LIBUSB_ERROR_TIMEOUT) && !count)
 			break;
+		stale = TRUE;
 		if (ret && ret != LIBUSB_ERROR_TIMEOUT) {
 			free_prepared_transfers(devc);
 			return SR_ERR_IO;
@@ -1344,24 +1532,51 @@ static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 		return SR_ERR_IO;
 	}
 
-	if (legacy_path)
-		dla_setup(packet, ((const uint16_t[]) { 60, 160, 250 })[devc->threshold],
-			((const uint8_t[]) { 7, 2, 1 })[devc->threshold], samples);
-	else {
-		configure_setup(&setup, devc, samples, has_trigger);
-		dla_setup_configure(packet, &setup);
+	/* Only a previous run that was never stopped leaves data behind. */
+	if (stale) {
+		dla_stop(packet);
+		if (send_command(sdi, packet) != SR_OK) {
+			free_prepared_transfers(devc);
+			return SR_ERR_IO;
+		}
+		read_stop_reply(sdi);
 	}
-	if (send_command(sdi, packet) != SR_OK) {
-		free_prepared_transfers(devc);
-		return SR_ERR_IO;
+	g_usleep(devc->have_history && devc->last_stream == devc->stream ?
+		STOP_SETTLE_USEC : MODE_SETTLE_USEC);
+
+	/* In Buffer mode capture enough extra to cover the skipped lead-in,
+	 * so every delivered sample was actually captured. */
+	configure_setup(&setup, devc, devc->stream ? samples :
+		MIN(samples + BUFFER_SKIP_BYTES * 8 / devc->decoder.wire_channels,
+		maximum), has_trigger);
+	dla_setup_configure(packet, &setup);
+	memcpy(devc->setup_cmd, packet, DLA_COMMAND_SIZE);
+	/* The device occasionally ignores a SETUP and keeps the previous
+	 * sample rate; sending it twice avoids that. */
+	for (i = 0; i < 2; i++) {
+		if (i)
+			g_usleep(SETUP_REPEAT_USEC);
+		if (send_command(sdi, packet) != SR_OK) {
+			free_prepared_transfers(devc);
+			return SR_ERR_IO;
+		}
 	}
-	wait_before_arm(legacy_path);
+	g_usleep(SETUP_ARM_USEC);
 	devc->usb_ctx = ((struct drv_context *)sdi->driver->context)->sr_ctx;
 	devc->pending = devc->submitted_transfers = 0;
 	devc->stopping = devc->stop_sent = devc->cancel_requested = FALSE;
 	devc->header_sent = FALSE;
 	devc->data_started = FALSE;
+	devc->upload_tail = FALSE;
 	devc->has_trigger = has_trigger;
+	devc->trig_sent = devc->trig_prev = FALSE;
+	devc->trig_best = -1;
+	/* Expected trigger sample after the skipped lead-in. The stale part of
+	 * the lead-in is 0-3 KiB, so centre on 1.5 KiB; the WCH path varies
+	 * more, so search up to 4 KiB either side. */
+	devc->trig_expect = (int64_t)(setup.samples * setup.trigger_position / 1000) -
+		(int64_t)(BUFFER_SKIP_BYTES - 1536) * 8 / devc->decoder.wire_channels;
+	devc->trig_window = (int64_t)4096 * 8 / devc->decoder.wire_channels;
 	first_data_msec = devc->stream ? 0 :
 		samples_to_milliseconds(samples, devc->samplerate);
 	devc->first_data_timeout_us = first_data_msec >
@@ -1410,18 +1625,16 @@ static int dev_acquisition_start(const struct sr_dev_inst *sdi)
 		devc->transfer_submitted[i] = TRUE;
 		devc->submitted_transfers++;
 	}
-	if (legacy_path) {
-		dla_channels(packet);
-		ret = send_command(sdi, packet);
-	} else {
-		ret = dla_channels_config(packet, mask, conditions, 0) < 0 ?
-			SR_ERR_ARG : send_command(sdi, packet);
-	}
+	ret = dla_channels_config(packet, mask, conditions, 0) < 0 ?
+		SR_ERR_ARG : send_command(sdi, packet);
 	if (ret != SR_OK) {
 		sr_err("Failed to arm the acquisition: %s.", sr_strerror(ret));
 		rollback_acquisition((struct sr_dev_inst *)sdi);
 		return ret;
 	}
+	memcpy(devc->arm_cmd, packet, DLA_COMMAND_SIZE);
+	devc->rearmed = FALSE;
+	devc->rearm_after_us = (int64_t)first_data_msec * 1000 + REARM_USEC;
 	devc->last_data_us = g_get_monotonic_time();
 	devc->starting = FALSE;
 	return SR_OK;
